@@ -1,0 +1,8 @@
+event_manager handles technical aspect.
+
+chatterbox - depends on event_manager.
+ contains buiness logic
+
+telegram - depeonds on chatterbox and event_manager. Receives the telegram updates and sends out messages
+
+root project contains lambda logic.

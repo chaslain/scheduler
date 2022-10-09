@@ -1,0 +1,22 @@
+[package]
+name = "scheduler"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+lambda_runtime = "0.1"
+serde = "^1"
+serde_json = "^1"
+serde_derive = "^1"
+
+[[bin]]
+name = "bootstrap"
+path = "src/main.rs"
+
+[dependencies.event_manager]
+path = "./event_manager"
+
+[dependencies.chatterbox]
+path = "./chatterbox"
