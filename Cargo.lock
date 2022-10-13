@@ -706,6 +706,7 @@ dependencies = [
  "serde",
  "serde_derive",
  "serde_json",
+ "telegram",
 ]
 
 [[package]]
@@ -822,6 +823,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "telegram"
+version = "0.1.0"
+dependencies = [
+ "chatterbox",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

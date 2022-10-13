@@ -20,3 +20,6 @@ path = "./event_manager"
 
 [dependencies.chatterbox]
 path = "./chatterbox"
+
+[dependencies.telegram]
+path = "./telegram"

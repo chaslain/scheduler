@@ -90,6 +90,24 @@ impl ConfigInProgress {
             DesiredValue::Token => DesiredValue::Message,
         }
     }
+
+    pub fn get_flow_status(&self) -> FlowStatus {
+        match self.desired_value {
+            DesiredValue::Message => FlowStatus::Step(get_message(&self.desired_value)),
+            DesiredValue::Frequency => FlowStatus::Step(get_message(&self.desired_value)),
+            DesiredValue::StartDate => FlowStatus::Step(get_message(&self.desired_value)),
+            DesiredValue::StartTime => FlowStatus::Step(get_message(&self.desired_value)),
+            DesiredValue::Chat => FlowStatus::Step(get_message(&self.desired_value)),
+            DesiredValue::HasToken => FlowStatus::Step(get_message(&self.desired_value)),
+            DesiredValue::Token => match self.has_token {
+                Some(has_token) => match has_token {
+                    true => FlowStatus::Done,
+                    false => FlowStatus::Step(get_message(&self.desired_value)),
+                },
+                None => FlowStatus::Step(get_message(&DesiredValue::HasToken)),
+            },
+        }
+    }
 }
 
 pub enum OptionType {
@@ -160,7 +178,10 @@ fn process_incoming_message(
     state: &mut ConfigInProgress,
 ) -> FlowStatus {
     match message {
-        UserInput::Cancel => delete_state(u_id),
+        UserInput::Cancel => {
+            delete_state(u_id);
+            FlowStatus::Done
+        },
         _ => {
             match state.desired_value {
                 DesiredValue::Message => process_desired_message(state, message),
@@ -170,15 +191,14 @@ fn process_incoming_message(
                 DesiredValue::Chat => process_chat(state, message),
                 DesiredValue::HasToken => process_has_token(state, message, u_id),
                 DesiredValue::Token => process_token(state, message, u_id),
-            }
+            };
 
             state.move_to_next_step();
 
             save_state(u_id, state);
+            state.get_flow_status()
         }
     }
-
-    FlowStatus::Done
 }
 
 fn process_desired_message(config_in_progress: &mut ConfigInProgress, message: UserInput) {
@@ -188,7 +208,7 @@ fn process_desired_message(config_in_progress: &mut ConfigInProgress, message: U
         }
         UserInput::Media(id) => config_in_progress.message = Some(Message::Media(id)),
         _ => panic!("Unsupported Input type"),
-    };
+    }
 }
 
 fn process_frequency<'a>(config_in_progress: &mut ConfigInProgress, message: UserInput) {
@@ -231,10 +251,6 @@ fn process_has_token(config_in_progress: &mut ConfigInProgress, message: UserInp
         }
 
         _ => panic!("Unsupported Input Type"),
-    }
-
-    if !config_in_progress.has_token.unwrap() {
-        close(u_id, config_in_progress);
     }
 }
 
@@ -323,10 +339,8 @@ fn close(u_id: &String, config_in_progress: &mut ConfigInProgress) {
     }
 }
 
-pub fn get_message(u_id: &String) -> Coorespondance {
-    let state = get_state(u_id);
-
-    match state.desired_value {
+fn get_message(desired_value: &DesiredValue) -> Coorespondance {
+    match desired_value {
         DesiredValue::Message => Coorespondance {
             message: "Send the message or media you'd like sent.".to_string(),
             option_type: OptionType::Media,
