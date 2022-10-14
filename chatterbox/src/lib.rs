@@ -181,7 +181,7 @@ fn process_incoming_message(
         UserInput::Cancel => {
             delete_state(u_id);
             FlowStatus::Done
-        },
+        }
         _ => {
             match state.desired_value {
                 DesiredValue::Message => process_desired_message(state, message),
