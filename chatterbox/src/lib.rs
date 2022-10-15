@@ -23,7 +23,7 @@ pub enum FlowStatus {
         message: String,
         desired_value: DesiredValue,
     },
-    Cancelled
+    Cancelled,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -45,7 +45,7 @@ pub enum DesiredValue {
     Chat,
     HasToken,
     Token,
-    None
+    None,
 }
 
 pub enum UserInput {
@@ -90,11 +90,9 @@ impl ConfigInProgress {
     pub fn move_to_next_step(&mut self) {
         self.desired_value = match self.desired_value {
             DesiredValue::Message => DesiredValue::Frequency,
-            DesiredValue::Frequency => {
-                match self.schedule.as_ref().unwrap() {
-                    Schedule::Daily => DesiredValue::StartTime,
-                    _ => DesiredValue::StartMonth,
-                }
+            DesiredValue::Frequency => match self.schedule.as_ref().unwrap() {
+                Schedule::Daily => DesiredValue::StartTime,
+                _ => DesiredValue::StartMonth,
             },
             DesiredValue::StartMonth => DesiredValue::StartDay,
             DesiredValue::StartDay => DesiredValue::StartTime,
@@ -103,13 +101,12 @@ impl ConfigInProgress {
             DesiredValue::HasToken => {
                 if self.has_token.unwrap() {
                     DesiredValue::Token
-                }
-                else {
+                } else {
                     DesiredValue::None
                 }
-            },
+            }
             DesiredValue::Token => DesiredValue::None,
-            DesiredValue::None => DesiredValue::None
+            DesiredValue::None => DesiredValue::None,
         }
     }
 
@@ -129,7 +126,7 @@ impl ConfigInProgress {
                 },
                 None => FlowStatus::Step(self.get_message()),
             },
-            DesiredValue::None => FlowStatus::Done
+            DesiredValue::None => FlowStatus::Done,
         }
     }
 
@@ -141,23 +138,24 @@ impl ConfigInProgress {
             },
             DesiredValue::Frequency => Coorespondance {
                 message: "How often would you like this sent?".to_string(),
-                option_type: OptionType::Options(vec![
-                    vec![
+                option_type: OptionType::Options(vec![vec![
                     "Daily".to_owned(),
                     "Weekly".to_owned(),
                     "Biweekly".to_owned(),
                     "Monthly".to_owned(),
-                    "Yearly".to_owned()
-                    ]
-                ]),
+                    "Yearly".to_owned(),
+                ]]),
             },
             DesiredValue::StartMonth => Coorespondance {
-                message:
-                    "Please select your scheduled month."
-                        .to_string(),
+                message: "Please select your scheduled month.".to_string(),
                 option_type: OptionType::Options(get_option_months()),
             },
-            DesiredValue::StartDay => Coorespondance { option_type: OptionType::Options(get_option_days(self.first_execution_month.as_ref().unwrap())), message: "Please select a day of month".to_string() },
+            DesiredValue::StartDay => Coorespondance {
+                option_type: OptionType::Options(get_option_days(
+                    self.first_execution_month.as_ref().unwrap(),
+                )),
+                message: "Please select a day of month".to_string(),
+            },
             DesiredValue::StartTime => Coorespondance {
                 message: "What time should the first message be sent?".to_string(),
                 option_type: OptionType::Time,
@@ -175,7 +173,10 @@ impl ConfigInProgress {
                 message: "Please provide the bot token.".to_string(),
                 option_type: OptionType::Media,
             },
-            DesiredValue::None => Coorespondance { option_type: OptionType::None, message: "Your message is scheduled. Thank you!".to_owned() }
+            DesiredValue::None => Coorespondance {
+                option_type: OptionType::None,
+                message: "Your message is scheduled. Thank you!".to_owned(),
+            },
         }
     }
 }
@@ -186,7 +187,7 @@ pub enum OptionType {
     Time,
     Date,
     YesNo,
-    None
+    None,
 }
 
 pub struct Coorespondance {
@@ -195,7 +196,6 @@ pub struct Coorespondance {
 }
 
 fn load_input(state: &mut ConfigInProgress, message: &String) -> Result<UserInput, String> {
-
     if message.to_lowercase() == "/cancel" {
         return Ok(UserInput::Cancel);
     }
@@ -216,7 +216,6 @@ fn load_input(state: &mut ConfigInProgress, message: &String) -> Result<UserInpu
             }
         }
         DesiredValue::StartMonth => {
-
             let parse: Result<i32, ()> = match message.to_lowercase().as_str() {
                 "january" => Ok(1),
                 "february" => Ok(2),
@@ -230,30 +229,34 @@ fn load_input(state: &mut ConfigInProgress, message: &String) -> Result<UserInpu
                 "october" => Ok(10),
                 "november" => Ok(11),
                 "december" => Ok(12),
-                _ => Err(())
+                _ => Err(()),
             };
 
             match parse {
                 Ok(_) => {
                     state.first_execution_month = Some(message.to_owned());
                     Ok(UserInput::Message(message.to_owned()))
-                },
-                Err(()) => Err("Please use one of the provided buttons to select your month.".to_string())
+                }
+                Err(()) => {
+                    Err("Please use one of the provided buttons to select your month.".to_string())
+                }
             }
-        },
+        }
         DesiredValue::StartDay => {
             let days = get_days_by_month(&state.first_execution_month.as_ref().unwrap());
 
             match message.parse::<i32>() {
                 Ok(number) => {
                     if number < 1 || number > days {
-                        Err("Please use one of the provided buttons to select your day.".to_string())
-                    }
-                    else {
+                        Err("Please use one of the provided buttons to select your day."
+                            .to_string())
+                    } else {
                         Ok(UserInput::Message(message.to_owned()))
                     }
-                },
-                Err(_) => Err("Please use one of the provided buttons to select your day.".to_string())
+                }
+                Err(_) => {
+                    Err("Please use one of the provided buttons to select your day.".to_string())
+                }
             }
         }
         DesiredValue::StartTime => {
@@ -268,7 +271,7 @@ fn load_input(state: &mut ConfigInProgress, message: &String) -> Result<UserInpu
         }
         DesiredValue::HasToken => Ok(UserInput::YesNo(message.to_lowercase() == "yes")),
         DesiredValue::Token => Ok(UserInput::Message(message.to_owned())),
-        DesiredValue::None => Ok(UserInput::Message(message.to_owned()))
+        DesiredValue::None => Ok(UserInput::Message(message.to_owned())),
     }
 }
 
@@ -301,10 +304,8 @@ fn process_incoming_message(
         UserInput::Cancel => {
             delete_state(u_id);
             FlowStatus::Cancelled
-        },
-        UserInput::List => {
-            process_list(u_id)
         }
+        UserInput::List => process_list(u_id),
         _ => {
             let closed = match state.desired_value {
                 DesiredValue::Message => process_desired_message(state, message),
@@ -315,7 +316,7 @@ fn process_incoming_message(
                 DesiredValue::Chat => process_chat(state, message),
                 DesiredValue::HasToken => process_has_token(state, message, u_id),
                 DesiredValue::Token => process_token(state, message, u_id),
-                DesiredValue::None => true
+                DesiredValue::None => true,
             };
 
             if !closed {
@@ -325,8 +326,6 @@ fn process_incoming_message(
             } else {
                 FlowStatus::Done
             }
-
-
         }
     }
 }
@@ -354,7 +353,6 @@ fn process_frequency<'a>(config_in_progress: &mut ConfigInProgress, message: Use
 
 fn process_month_day(config_in_progress: &mut ConfigInProgress, message: UserInput) -> bool {
     match message {
-        
         UserInput::Message(date) => {
             config_in_progress.first_execution_day = Some(date);
         }
@@ -391,7 +389,11 @@ fn process_chat(confing_in_progress: &mut ConfigInProgress, message: UserInput) 
     false
 }
 
-fn process_has_token(config_in_progress: &mut ConfigInProgress, message: UserInput, u_id: &String) -> bool {
+fn process_has_token(
+    config_in_progress: &mut ConfigInProgress,
+    message: UserInput,
+    u_id: &String,
+) -> bool {
     match message {
         UserInput::YesNo(answer) => {
             config_in_progress.has_token = Some(answer);
@@ -400,8 +402,7 @@ fn process_has_token(config_in_progress: &mut ConfigInProgress, message: UserInp
                 // flow is now done!
                 close(u_id, config_in_progress);
                 true
-            }
-            else {
+            } else {
                 false
             }
         }
@@ -410,7 +411,11 @@ fn process_has_token(config_in_progress: &mut ConfigInProgress, message: UserInp
     }
 }
 
-fn process_token(config_in_progress: &mut ConfigInProgress, message: UserInput, u_id: &String) -> bool {
+fn process_token(
+    config_in_progress: &mut ConfigInProgress,
+    message: UserInput,
+    u_id: &String,
+) -> bool {
     match message {
         UserInput::Message(token) => config_in_progress.token = Some(token),
         _ => panic!("Unsupported Input Type"),
@@ -423,7 +428,12 @@ fn process_token(config_in_progress: &mut ConfigInProgress, message: UserInput, 
 fn get_first_execution_date(state: &ConfigInProgress) -> NaiveDate {
     let year = Utc::now().year();
     let month = get_month_number(&state.first_execution_month);
-    let day = state.first_execution_day.as_ref().unwrap().parse::<u32>().unwrap();
+    let day = state
+        .first_execution_day
+        .as_ref()
+        .unwrap()
+        .parse::<u32>()
+        .unwrap();
 
     NaiveDate::from_ymd(year, month, day)
 }
@@ -487,8 +497,6 @@ fn close(u_id: &String, config_in_progress: &mut ConfigInProgress) {
         }
     }
 }
-
-
 
 fn get_state(u_id: &String) -> (ConfigInProgress, bool) {
     let file_name: String = format!("in_progress/{}", u_id);
@@ -556,7 +564,7 @@ fn get_days_by_month(month: &String) -> i32 {
         "october" => 31,
         "november" => 30,
         "december" => 31,
-        _ => 0
+        _ => 0,
     }
 }
 
@@ -575,16 +583,13 @@ fn get_month_number(option: &Option<String>) -> u32 {
             "october" => 10,
             "november" => 11,
             "december" => 12,
-            _ => 0
+            _ => 0,
         },
-        None => 0
+        None => 0,
     }
-    
 }
 
 fn get_option_days(month: &String) -> Vec<Vec<String>> {
-
-
     let mut result: Vec<Vec<String>> = Vec::new();
 
     result.push(Vec::new());
@@ -598,8 +603,8 @@ fn get_option_days(month: &String) -> Vec<Vec<String>> {
     let mut index = 0;
     while i <= get_days_by_month(month) {
         result.get_mut(index).unwrap().push(i.to_string());
-        i+=1;
-        j+=1;
+        i += 1;
+        j += 1;
 
         if j == 7 {
             j = 0;
@@ -610,25 +615,24 @@ fn get_option_days(month: &String) -> Vec<Vec<String>> {
     result
 }
 
-
 fn get_option_months() -> Vec<Vec<String>> {
-    vec!(
-        vec!("January".to_owned()),
-        vec!("February".to_owned()),
-        vec!("March".to_owned()),
-        vec!("April".to_owned()),
-        vec!("May".to_owned()),
-        vec!("June".to_owned()),
-        vec!("July".to_owned()),
-        vec!("August".to_owned()),
-        vec!("September".to_owned()),
-        vec!("October".to_owned()),
-        vec!("November".to_owned()),
-        vec!("December".to_owned())
-    )
+    vec![
+        vec!["January".to_owned()],
+        vec!["February".to_owned()],
+        vec!["March".to_owned()],
+        vec!["April".to_owned()],
+        vec!["May".to_owned()],
+        vec!["June".to_owned()],
+        vec!["July".to_owned()],
+        vec!["August".to_owned()],
+        vec!["September".to_owned()],
+        vec!["October".to_owned()],
+        vec!["November".to_owned()],
+        vec!["December".to_owned()],
+    ]
 }
 
-fn get_month_from_int(item: i32) -> Option<Month>{
+fn get_month_from_int(item: i32) -> Option<Month> {
     match item {
         1 => Some(Month::January),
         2 => Some(Month::February),
@@ -642,7 +646,7 @@ fn get_month_from_int(item: i32) -> Option<Month>{
         10 => Some(Month::October),
         11 => Some(Month::November),
         12 => Some(Month::December),
-        _ => None
+        _ => None,
     }
 }
 

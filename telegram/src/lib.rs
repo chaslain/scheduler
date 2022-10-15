@@ -169,7 +169,7 @@ impl BotBoy {
                 print!("{} - ", button);
                 items.get_mut(index).unwrap().push(InlineKeyboardButton {
                     text: button.to_owned(),
-                    callback_data: button.to_owned()
+                    callback_data: button.to_owned(),
                 });
             }
 
@@ -234,12 +234,9 @@ impl BotBoy {
             for i in updates {
                 if i.message.is_some() {
                     self.handle_message_update(i)
-                }
-                else
-                if i.callback_query.is_some() {
+                } else if i.callback_query.is_some() {
                     self.handle_query_update(i);
-                }
-                else {
+                } else {
                     panic!("Unhandled update type");
                 }
             }
@@ -254,7 +251,6 @@ impl BotBoy {
         let query = i.callback_query.unwrap();
         let (text, chat_id) = get_string_from_query(query);
         self.update_from_string(chat_id, &text);
-
     }
 
     fn handle_message_update(&self, i: Update) {
@@ -268,13 +264,14 @@ impl BotBoy {
 
         match flow_status {
             FlowStatus::Cancelled => {
-                let _ =
-                self.send_message_to_user(chat_id, &"Cancelled. Send another message to start again.".to_owned());
-            },
+                let _ = self.send_message_to_user(
+                    chat_id,
+                    &"Cancelled. Send another message to start again.".to_owned(),
+                );
+            }
             FlowStatus::Done => {
                 let _ =
                     self.send_message_to_user(chat_id, &"Your messages are scheduled! Ensure I (or the bot you're using) is added to the chat and has the ability to send messages.".to_owned());
-                
             }
             FlowStatus::Step(coorespondance) => {
                 self.use_coorespondance(chat_id, coorespondance);
@@ -289,20 +286,29 @@ impl BotBoy {
     }
 
     fn use_coorespondance(&self, chat_id: i64, coorespondance: Coorespondance) {
-        let response: Option<::core::result::Result<::reqwest::Response, ::reqwest::Error>> = match coorespondance.option_type {
-            OptionType::Date => Some(self.send_message_to_user(chat_id, &coorespondance.message)),
-            OptionType::Media => Some(self.send_message_to_user(chat_id, &coorespondance.message)),
-            OptionType::YesNo => {
-                Some(self.send_message_to_user_with_yesno(chat_id, &coorespondance.message))
-            }
-            OptionType::Time => Some(self.send_message_to_user(chat_id, &coorespondance.message)),
-            OptionType::Options(options) => Some(self.send_message_to_user_with_option_response(
-                chat_id,
-                &coorespondance.message,
-                &options,
-            )),
-            OptionType::None => None
-        };
+        let response: Option<::core::result::Result<::reqwest::Response, ::reqwest::Error>> =
+            match coorespondance.option_type {
+                OptionType::Date => {
+                    Some(self.send_message_to_user(chat_id, &coorespondance.message))
+                }
+                OptionType::Media => {
+                    Some(self.send_message_to_user(chat_id, &coorespondance.message))
+                }
+                OptionType::YesNo => {
+                    Some(self.send_message_to_user_with_yesno(chat_id, &coorespondance.message))
+                }
+                OptionType::Time => {
+                    Some(self.send_message_to_user(chat_id, &coorespondance.message))
+                }
+                OptionType::Options(options) => {
+                    Some(self.send_message_to_user_with_option_response(
+                        chat_id,
+                        &coorespondance.message,
+                        &options,
+                    ))
+                }
+                OptionType::None => None,
+            };
 
         println!("{}", response.unwrap().unwrap().text().unwrap());
     }
@@ -373,7 +379,6 @@ fn get_string_from_message(message: Message) -> (String, i64) {
         panic!("Unsupported message type");
     }
 }
-
 
 fn get_string_from_query(query: CallbackQuery) -> (String, i64) {
     (query.data, query.message.chat.unwrap().id)

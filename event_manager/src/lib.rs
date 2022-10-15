@@ -3,8 +3,12 @@ extern crate yaml_rust;
 
 use chrono::{Month, Weekday};
 use serde::{Deserialize, Serialize};
-use std::{fs::{File, create_dir_all}, io::Write, path::Path, os::unix::fs::symlink};
-
+use std::{
+    fs::{create_dir_all, File},
+    io::Write,
+    os::unix::fs::symlink,
+    path::Path,
+};
 
 #[derive(Serialize, Deserialize)]
 pub struct Config {
@@ -98,21 +102,14 @@ impl Schedule {
     }
 }
 
-pub fn create_schedule(
-    user_id: &String,
-    configuration: Config,
-    schedule: Schedule,
-) -> bool {
+pub fn create_schedule(user_id: &String, configuration: Config, schedule: Schedule) -> bool {
     match create_schedule_main(user_id, configuration, schedule) {
-        Ok(path) => {
-            create_schedule_index(user_id, &path)
-        }
-        Err(()) => false
+        Ok(path) => create_schedule_index(user_id, &path),
+        Err(()) => false,
     }
 }
 
 fn create_schedule_index(user_id: &String, path_str: &String) -> bool {
-
     let path = Path::new(path_str);
     let sym_directory = format!("users/{}", user_id);
     let sym_path_directory = Path::new(&sym_directory);
@@ -120,12 +117,11 @@ fn create_schedule_index(user_id: &String, path_str: &String) -> bool {
     let mut i = 0;
 
     if sym_path_directory.exists() {
-        for _ in sym_path_directory.read_dir() { // not concerned with files themselves, just how many there are...
+        for _ in sym_path_directory.read_dir() {
+            // not concerned with files themselves, just how many there are...
             i += 1;
         }
-    }
-    else
-    {
+    } else {
         _ = create_dir_all(sym_path_directory);
     }
 
@@ -134,35 +130,31 @@ fn create_schedule_index(user_id: &String, path_str: &String) -> bool {
 
     match symlink(path, sym_path) {
         Ok(_) => true,
-        Err(_) => false
+        Err(_) => false,
     }
-
-
-    
 }
 
-fn create_schedule_main(    user_id: &String,
+fn create_schedule_main(
+    user_id: &String,
     configuration: Config,
-    schedule: Schedule) -> Result<String, ()> {
-        let file_content = serde_yaml::to_string(&configuration).unwrap();
+    schedule: Schedule,
+) -> Result<String, ()> {
+    let file_content = serde_yaml::to_string(&configuration).unwrap();
 
-        let file_name = schedule.get_file_location(user_id);
-    
-        println!("{}", file_name);
-        let path = Path::new(&file_name);
-    
-        create_dir_all(&path.parent().unwrap()).unwrap();
-    
-        let mut file = File::create(path).unwrap();
-    
-        match file.write_all(file_content.as_bytes()) {
-            Ok(_) => {
-                Ok(file_name)
-            },
-            Err(_) => Err(())
-        }
+    let file_name = schedule.get_file_location(user_id);
 
+    println!("{}", file_name);
+    let path = Path::new(&file_name);
+
+    create_dir_all(&path.parent().unwrap()).unwrap();
+
+    let mut file = File::create(path).unwrap();
+
+    match file.write_all(file_content.as_bytes()) {
+        Ok(_) => Ok(file_name),
+        Err(_) => Err(()),
     }
+}
 
 // pub fn list_user_jobs(user_id: &String) -> Vec<Config> {
 
