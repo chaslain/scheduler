@@ -273,7 +273,7 @@ impl BotBoy {
             },
             FlowStatus::Done => {
                 let _ =
-                    self.send_message_to_user(chat_id, &"Your messages are scheduled!".to_owned());
+                    self.send_message_to_user(chat_id, &"Your messages are scheduled! Ensure I (or the bot you're using) is added to the chat and has the ability to send messages.".to_owned());
                 
             }
             FlowStatus::Step(coorespondance) => {
