@@ -2,7 +2,9 @@ extern crate event_manager;
 
 use chrono::DateTime;
 use chrono::Datelike;
-use chrono::NaiveDateTime;
+use chrono::Month;
+use chrono::NaiveDate;
+use chrono::Utc;
 use event_manager::create_schedule;
 use event_manager::Config;
 use event_manager::Message;
@@ -36,7 +38,8 @@ pub enum Schedule {
 pub enum DesiredValue {
     Message,
     Frequency,
-    StartDate,
+    StartMonth,
+    StartDay,
     StartTime,
     Chat,
     HasToken,
@@ -70,7 +73,8 @@ impl UserInput {
 struct ConfigInProgress {
     pub schedule: Option<Schedule>,
     pub desired_value: DesiredValue,
-    pub first_execution_date: Option<String>,
+    pub first_execution_month: Option<String>,
+    pub first_execution_day: Option<String>,
     pub first_execution_time: Option<String>,
     pub chat_id: Option<String>,
     pub message: Option<Message>,
@@ -82,8 +86,9 @@ impl ConfigInProgress {
     pub fn move_to_next_step(&mut self) {
         self.desired_value = match self.desired_value {
             DesiredValue::Message => DesiredValue::Frequency,
-            DesiredValue::Frequency => DesiredValue::StartDate,
-            DesiredValue::StartDate => DesiredValue::StartTime,
+            DesiredValue::Frequency => DesiredValue::StartMonth,
+            DesiredValue::StartMonth => DesiredValue::StartDay,
+            DesiredValue::StartDay => DesiredValue::StartTime,
             DesiredValue::StartTime => DesiredValue::Chat,
             DesiredValue::Chat => DesiredValue::HasToken,
             DesiredValue::HasToken => DesiredValue::Token,
@@ -93,25 +98,71 @@ impl ConfigInProgress {
 
     pub fn get_flow_status(&self) -> FlowStatus {
         match self.desired_value {
-            DesiredValue::Message => FlowStatus::Step(get_message(&self.desired_value)),
-            DesiredValue::Frequency => FlowStatus::Step(get_message(&self.desired_value)),
-            DesiredValue::StartDate => FlowStatus::Step(get_message(&self.desired_value)),
-            DesiredValue::StartTime => FlowStatus::Step(get_message(&self.desired_value)),
-            DesiredValue::Chat => FlowStatus::Step(get_message(&self.desired_value)),
-            DesiredValue::HasToken => FlowStatus::Step(get_message(&self.desired_value)),
+            DesiredValue::Message => FlowStatus::Step(self.get_message()),
+            DesiredValue::Frequency => FlowStatus::Step(self.get_message()),
+            DesiredValue::StartMonth => FlowStatus::Step(self.get_message()),
+            DesiredValue::StartDay => FlowStatus::Step(self.get_message()),
+            DesiredValue::StartTime => FlowStatus::Step(self.get_message()),
+            DesiredValue::Chat => FlowStatus::Step(self.get_message()),
+            DesiredValue::HasToken => FlowStatus::Step(self.get_message()),
             DesiredValue::Token => match self.has_token {
                 Some(has_token) => match has_token {
                     true => FlowStatus::Done,
-                    false => FlowStatus::Step(get_message(&self.desired_value)),
+                    false => FlowStatus::Step(self.get_message()),
                 },
-                None => FlowStatus::Step(get_message(&DesiredValue::HasToken)),
+                None => FlowStatus::Step(self.get_message()),
+            },
+        }
+    }
+
+    fn get_message(&self) -> Coorespondance {
+        match self.desired_value {
+            DesiredValue::Message => Coorespondance {
+                message: "Send the message or media you'd like sent.".to_string(),
+                option_type: OptionType::Media,
+            },
+            DesiredValue::Frequency => Coorespondance {
+                message: "How often would you like this sent?".to_string(),
+                option_type: OptionType::Options(vec![
+                    vec![
+                    "Daily".to_owned(),
+                    "Weekly".to_owned(),
+                    "Biweekly".to_owned(),
+                    "Monthly".to_owned(),
+                    "Yearly".to_owned()
+                    ]
+                ]),
+            },
+            DesiredValue::StartMonth => Coorespondance {
+                message:
+                    "Please select your scheduled month."
+                        .to_string(),
+                option_type: OptionType::Options(get_option_months()),
+            },
+            DesiredValue::StartDay => Coorespondance { option_type: OptionType::Options(get_option_days(self.first_execution_month.as_ref().unwrap())), message: "Please select a day of month".to_string() },
+            DesiredValue::StartTime => Coorespondance {
+                message: "What time should the first message be sent?".to_string(),
+                option_type: OptionType::Time,
+            },
+            DesiredValue::Chat => Coorespondance {
+                message: "Please link the chat or channel where this message will be posted."
+                    .to_string(),
+                option_type: OptionType::Media,
+            },
+            DesiredValue::HasToken => Coorespondance {
+                message: "Would you like this sent by your own custom bot?".to_string(),
+                option_type: OptionType::YesNo,
+            },
+            DesiredValue::Token => Coorespondance {
+                message: "Please provide the bot token.".to_string(),
+                option_type: OptionType::Media,
             },
         }
     }
 }
 
 pub enum OptionType {
-    Options(Vec<String>),
+    Options(Vec<Vec<String>>),
     Media,
     Time,
     Date,
@@ -123,32 +174,65 @@ pub struct Coorespondance {
     pub message: String,
 }
 
-fn load_input(state: &ConfigInProgress, message: &String) -> Result<UserInput, String> {
+fn load_input(state: &mut ConfigInProgress, message: &String) -> Result<UserInput, String> {
     match state.desired_value {
         DesiredValue::Message => Ok(UserInput::Message(message.to_owned())),
         DesiredValue::Chat => Ok(UserInput::Message(message.to_owned())),
         DesiredValue::Frequency => {
             let parse = UserInput::parse_frequency(message);
             if parse.is_err() {
-                Err("Invalid Frequency".to_owned())
+                Err("Please select a frequency.".to_owned())
             } else {
                 Ok(parse.unwrap())
             }
         }
-        DesiredValue::StartDate => {
-            let datetime = NaiveDateTime::parse_from_str(&message, "%Y-%m-%d");
+        DesiredValue::StartMonth => {
+            println!("{}", message);
 
-            if datetime.is_err() {
-                Err("Invalid Date".to_owned())
-            } else {
-                Ok(UserInput::Date(message.to_owned()))
+            let parse: Result<i32, ()> = match message.to_lowercase().as_str() {
+                "january" => Ok(1),
+                "february" => Ok(2),
+                "march" => Ok(3),
+                "april" => Ok(4),
+                "may" => Ok(5),
+                "june" => Ok(6),
+                "july" => Ok(7),
+                "august" => Ok(8),
+                "september" => Ok(9),
+                "october" => Ok(10),
+                "november" => Ok(11),
+                "december" => Ok(12),
+                _ => Err(())
+            };
+
+            match parse {
+                Ok(_) => {
+                    state.first_execution_month = Some(message.to_owned());
+                    Ok(UserInput::Message(message.to_owned()))
+                },
+                Err(()) => Err("Please use one of the provided buttons to select your month.".to_string())
+            }
+        },
+        DesiredValue::StartDay => {
+            let days = get_days_by_month(&state.first_execution_month.as_ref().unwrap());
+
+            match message.parse::<i32>() {
+                Ok(number) => {
+                    if number < 1 || number > days {
+                        Err("Please use one of the provided buttons to select your day.".to_string())
+                    }
+                    else {
+                        Ok(UserInput::Message(message.to_owned()))
+                    }
+                },
+                Err(_) => Err("Please use one of the provided buttons to select your day.".to_string())
             }
         }
         DesiredValue::StartTime => {
             let time = DateTime::parse_from_str(message, "%h:%M");
 
             match time {
-                Err(_) => Err("Invalid time".to_owned()),
+                Err(_) => Err("Hmm... Sorry, I don't understand that. Can you send it in the 24-hour HH:MM format?".to_owned()),
                 Ok(_) => Ok(UserInput::Time(message.to_owned())),
             }
         }
@@ -159,16 +243,21 @@ fn load_input(state: &ConfigInProgress, message: &String) -> Result<UserInput, S
 
 pub fn accept_incoming_message(u_id: &String, message: &String) -> FlowStatus {
     // first thing we have to do is stick this into an enum.
-    let mut state = get_state(&u_id);
+    let (mut state, already_exists) = get_state(&u_id);
 
-    let validate = load_input(&state, message);
+    if !already_exists {
+        save_state(u_id, &state);
+        state.get_flow_status()
+    } else {
+        let validate = load_input(&mut state, message);
 
-    match validate {
-        Ok(input) => process_incoming_message(u_id, input, &mut state),
-        Err(message) => FlowStatus::Error {
-            message,
-            desired_value: state.desired_value,
-        },
+        match validate {
+            Ok(input) => process_incoming_message(u_id, input, &mut state),
+            Err(message) => FlowStatus::Error {
+                message,
+                desired_value: state.desired_value,
+            },
+        }
     }
 }
 
@@ -186,7 +275,8 @@ fn process_incoming_message(
             match state.desired_value {
                 DesiredValue::Message => process_desired_message(state, message),
                 DesiredValue::Frequency => process_frequency(state, message),
-                DesiredValue::StartDate => process_date(state, message),
+                DesiredValue::StartDay => process_month_day(state, message),
+                DesiredValue::StartMonth => process_month(state, message),
                 DesiredValue::StartTime => process_time(state, message),
                 DesiredValue::Chat => process_chat(state, message),
                 DesiredValue::HasToken => process_has_token(state, message, u_id),
@@ -218,9 +308,19 @@ fn process_frequency<'a>(config_in_progress: &mut ConfigInProgress, message: Use
     }
 }
 
-fn process_date(config_in_progress: &mut ConfigInProgress, message: UserInput) {
+fn process_month_day(config_in_progress: &mut ConfigInProgress, message: UserInput) {
     match message {
-        UserInput::Date(date) => config_in_progress.first_execution_date = Some(date),
+        
+        UserInput::Message(date) => {
+            config_in_progress.first_execution_day = Some(date);
+        }
+        _ => panic!("Unsupported Input type"),
+    }
+}
+
+fn process_month(config_in_progress: &mut ConfigInProgress, message: UserInput) {
+    match message {
+        UserInput::Message(date) => config_in_progress.first_execution_month = Some(date),
         _ => panic!("Unsupported Input type"),
     }
 }
@@ -263,6 +363,14 @@ fn process_token(config_in_progress: &mut ConfigInProgress, message: UserInput, 
     close(u_id, config_in_progress);
 }
 
+fn get_first_execution_date(state: &ConfigInProgress) -> NaiveDate {
+    let year = Utc::now().year();
+    let month = get_month_number(&state.first_execution_month);
+    let day = state.first_execution_day.as_ref().unwrap().parse::<u32>().unwrap();
+
+    NaiveDate::from_ymd(year, month, day)
+}
+
 fn close(u_id: &String, config_in_progress: &mut ConfigInProgress) {
     delete_state(u_id);
 
@@ -280,57 +388,41 @@ fn close(u_id: &String, config_in_progress: &mut ConfigInProgress) {
             let _ = create_schedule(u_id, config, schedule);
         }
         Schedule::Weekly => {
-            let datetime = NaiveDateTime::parse_from_str(
-                &config_in_progress.first_execution_date.to_owned().unwrap(),
-                "%Y-%m-%d",
-            )
-            .unwrap();
-
+            let date = get_first_execution_date(config_in_progress);
             let schedule = emSchedule::Weekly {
-                weekday: datetime.weekday(),
+                weekday: date.weekday(),
                 time: config_in_progress.first_execution_time.to_owned().unwrap(),
             };
 
             let _ = create_schedule(u_id, config, schedule);
         }
         Schedule::Biweekly => {
-            let datetime = NaiveDateTime::parse_from_str(
-                &config_in_progress.first_execution_date.to_owned().unwrap(),
-                "%Y-%m-%d",
-            )
-            .unwrap();
+            let date = get_first_execution_date(config_in_progress);
 
             let schedule = emSchedule::BiWeekly {
-                weekday: datetime.weekday(),
+                weekday: date.weekday(),
                 time: config_in_progress.first_execution_time.to_owned().unwrap(),
-                odd: datetime.iso_week().week() % 2 == 0,
+                odd: date.iso_week().week() % 2 == 0,
             };
 
             let _ = create_schedule(u_id, config, schedule);
         }
         Schedule::Monthly => {
-            let datetime = NaiveDateTime::parse_from_str(
-                &config_in_progress.first_execution_date.to_owned().unwrap(),
-                "%Y-%m-%d",
-            )
-            .unwrap();
+            let date = get_first_execution_date(config_in_progress);
 
             let schedule = emSchedule::Monthly {
-                day: datetime.day() as i32,
+                day: date.day() as i32,
                 time: config_in_progress.first_execution_time.to_owned().unwrap(),
             };
 
             let _ = create_schedule(u_id, config, schedule);
         }
         Schedule::Yearly => {
-            let datetime = NaiveDateTime::parse_from_str(
-                &config_in_progress.first_execution_date.to_owned().unwrap(),
-                "%Y-%m-%d",
-            )
-            .unwrap();
+            let date = get_first_execution_date(config_in_progress);
 
-            let schedule = emSchedule::Monthly {
-                day: datetime.day() as i32,
+            let schedule = emSchedule::Yearly {
+                month: get_month_from_int(date.month() as i32).unwrap(),
+                day: date.day() as i32,
                 time: config_in_progress.first_execution_time.to_owned().unwrap(),
             };
 
@@ -339,49 +431,9 @@ fn close(u_id: &String, config_in_progress: &mut ConfigInProgress) {
     }
 }
 
-fn get_message(desired_value: &DesiredValue) -> Coorespondance {
-    match desired_value {
-        DesiredValue::Message => Coorespondance {
-            message: "Send the message or media you'd like sent.".to_string(),
-            option_type: OptionType::Media,
-        },
-        DesiredValue::Frequency => Coorespondance {
-            message: "How often would you like this sent?".to_string(),
-            option_type: OptionType::Options(vec![
-                "Daily".to_owned(),
-                "Weekly".to_owned(),
-                "Biweekly".to_owned(),
-                "Monthly".to_owned(),
-                "Yearly".to_owned(),
-            ]),
-        },
-        DesiredValue::StartDate => Coorespondance {
-            message:
-                "When should the first message be sent? (Future dates will be based off of this.)"
-                    .to_string(),
-            option_type: OptionType::Date,
-        },
-        DesiredValue::StartTime => Coorespondance {
-            message: "What time should the first message be sent?".to_string(),
-            option_type: OptionType::Time,
-        },
-        DesiredValue::Chat => Coorespondance {
-            message: "Please link the chat or channel where this message will be posted."
-                .to_string(),
-            option_type: OptionType::Media,
-        },
-        DesiredValue::HasToken => Coorespondance {
-            message: "Would you like this sent by your own custom bot?".to_string(),
-            option_type: OptionType::YesNo,
-        },
-        DesiredValue::Token => Coorespondance {
-            message: "Please provide the bot token.".to_string(),
-            option_type: OptionType::Media,
-        },
-    }
-}
 
-fn get_state(u_id: &String) -> ConfigInProgress {
+
+fn get_state(u_id: &String) -> (ConfigInProgress, bool) {
     let file_name: String = format!("in_progress/{}", u_id);
 
     let path = Path::new(&file_name);
@@ -389,18 +441,22 @@ fn get_state(u_id: &String) -> ConfigInProgress {
     if Path::exists(path) {
         let contents = read_to_string(path).unwrap();
 
-        serde_yaml::from_str(&contents).unwrap()
-    }
-
-    ConfigInProgress {
-        schedule: None,
-        first_execution_date: None,
-        first_execution_time: None,
-        desired_value: DesiredValue::Message,
-        has_token: None,
-        chat_id: None,
-        message: None,
-        token: None,
+        (serde_yaml::from_str(&contents).unwrap(), true)
+    } else {
+        (
+            ConfigInProgress {
+                schedule: None,
+                first_execution_day: None,
+                first_execution_month: None,
+                first_execution_time: None,
+                desired_value: DesiredValue::Message,
+                has_token: None,
+                chat_id: None,
+                message: None,
+                token: None,
+            },
+            false,
+        )
     }
 }
 
@@ -412,8 +468,12 @@ fn save_state(u_id: &String, config_in_progress: &ConfigInProgress) {
     let contents = serde_yaml::to_string(config_in_progress).unwrap();
     let file = File::create(path);
     match file {
-        Ok(mut f) => {let _ = f.write_all(contents.as_bytes());},
-        Err(err) => {panic!("{}", err)}
+        Ok(mut f) => {
+            let _ = f.write_all(contents.as_bytes());
+        }
+        Err(err) => {
+            panic!("{}", err)
+        }
     }
 }
 
@@ -423,6 +483,111 @@ fn delete_state(u_id: &String) {
 
     if Path::exists(path) {
         let _ = remove_file(file_path);
+    }
+}
+
+fn get_days_by_month(month: &String) -> i32 {
+    match month.to_lowercase().as_str() {
+        "january" => 31,
+        "february" => 28,
+        "march" => 31,
+        "april" => 30,
+        "may" => 31,
+        "june" => 30,
+        "july" => 31,
+        "august" => 31,
+        "september" => 30,
+        "october" => 31,
+        "november" => 30,
+        "december" => 31,
+        _ => 0
+    }
+}
+
+fn get_month_number(option: &Option<String>) -> u32 {
+    match option {
+        Some(month) => match month.to_lowercase().as_str() {
+            "january" => 1,
+            "february" => 2,
+            "march" => 3,
+            "april" => 4,
+            "may" => 5,
+            "june" => 6,
+            "july" => 7,
+            "august" => 8,
+            "september" => 9,
+            "october" => 10,
+            "november" => 11,
+            "december" => 12,
+            _ => 0
+        },
+        None => 0
+    }
+    
+}
+
+fn get_option_days(month: &String) -> Vec<Vec<String>> {
+
+
+    let mut result: Vec<Vec<String>> = Vec::new();
+
+    result.push(Vec::new());
+    result.push(Vec::new());
+    result.push(Vec::new());
+    result.push(Vec::new());
+    result.push(Vec::new());
+
+    let mut i = 1;
+    let mut j = 0;
+    let mut index = 0;
+    while i < get_days_by_month(month) {
+        result.get_mut(index).unwrap().push(i.to_string());
+        print!("{} - ", i);
+        i+=1;
+        j+=1;
+
+        if j == 7 {
+            j = 0;
+            index += 1;
+        }
+    }
+
+    result
+}
+
+
+fn get_option_months() -> Vec<Vec<String>> {
+    vec!(
+        vec!("January".to_owned()),
+        vec!("February".to_owned()),
+        vec!("March".to_owned()),
+        vec!("April".to_owned()),
+        vec!("May".to_owned()),
+        vec!("June".to_owned()),
+        vec!("July".to_owned()),
+        vec!("August".to_owned()),
+        vec!("September".to_owned()),
+        vec!("October".to_owned()),
+        vec!("November".to_owned()),
+        vec!("December".to_owned())
+    )
+}
+
+fn get_month_from_int(item: i32) -> Option<Month>{
+    match item {
+        1 => Some(Month::January),
+        2 => Some(Month::February),
+        3 => Some(Month::March),
+        4 => Some(Month::April),
+        5 => Some(Month::May),
+        6 => Some(Month::June),
+        7 => Some(Month::July),
+        8 => Some(Month::August),
+        9 => Some(Month::September),
+        10 => Some(Month::October),
+        11 => Some(Month::November),
+        12 => Some(Month::December),
+        _ => None
     }
 }
 
