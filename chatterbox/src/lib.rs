@@ -405,11 +405,16 @@ fn get_state(u_id: &String) -> ConfigInProgress {
 }
 
 fn save_state(u_id: &String, config_in_progress: &ConfigInProgress) {
-    let file_path = format!("in_progress/{}", &u_id);
+    let file_path = format!("./in_progress/{}", &u_id);
+
+    println!("{}", file_path);
     let path = Path::new(&file_path);
     let contents = serde_yaml::to_string(config_in_progress).unwrap();
-    let mut file = File::create(path).unwrap();
-    let _ = file.write_all(contents.as_bytes());
+    let file = File::create(path);
+    match file {
+        Ok(mut f) => {let _ = f.write_all(contents.as_bytes());},
+        Err(err) => {panic!("{}", err)}
+    }
 }
 
 fn delete_state(u_id: &String) {

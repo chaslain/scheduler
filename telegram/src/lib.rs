@@ -1,11 +1,15 @@
 extern crate chatterbox;
 extern crate serde_json;
 
+use chatterbox::Coorespondance;
+use chatterbox::FlowStatus;
+use chatterbox::OptionType;
 use reqwest::Client;
 use reqwest::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::to_string;
 use std::env;
+use chatterbox::accept_incoming_message;
 
 #[derive(Serialize, Deserialize)]
 struct Video {
@@ -13,12 +17,12 @@ struct Video {
 }
 #[derive(Serialize, Deserialize)]
 struct User {
-    id: String,
+    id: i64,
 }
 
 #[derive(Serialize, Deserialize)]
 struct Chat {
-    id: i32,
+    id: i64,
 
     #[serde(rename = "type")]
     _type: Option<String>,
@@ -38,14 +42,16 @@ struct CallbackQuery {
 
 }
 
+#[derive(Serialize, Deserialize)]
 struct Update {
+    update_id: i64,
     message: Option<Message>,
     callback_query: Option<CallbackQuery>
 }
 
 #[derive(Serialize, Deserialize)]
 struct SendMessage {
-    chat_id: i32,
+    chat_id: i64,
     text: String,
     reply_markup: Option<InlineKeyboardMarkup>,
 }
@@ -90,6 +96,16 @@ impl Values {
 
         result
     }
+
+    pub fn get_url_updates(&self, token: &String) -> String {
+        format!("{}{}/getUpdates", self.base_url, token)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct Response<T> {
+    ok: bool,
+    result: T
 }
 
 pub struct BotBoy {
@@ -109,7 +125,7 @@ impl BotBoy {
 
     pub fn send_message_to_user(
         &self,
-        user_id: i32,
+        user_id: i64,
         message: &String,
     ) -> Result<reqwest::Response> {
         let message = SendMessage {
@@ -121,9 +137,20 @@ impl BotBoy {
         self.send_object(&self.values.get_url_send(&self.token), message)
     }
 
+    pub fn send_message_to_user_with_yesno(
+        &self,
+        user_id: i64,
+        message: &String
+    ) -> Result<reqwest::Response>
+    {
+        let options = vec!["Yes".to_owned(), "No".to_owned()];
+
+        self.send_message_to_user_with_option_response(user_id, message, &options)
+    }
+
     pub fn send_message_to_user_with_option_response(
         &self,
-        user_id: i32,
+        user_id: i64,
         message: &String,
         options: &Vec<String>,
     ) -> Result<reqwest::Response> {
@@ -167,5 +194,93 @@ impl BotBoy {
         }
 
         self.client.execute(req)
+    }
+
+    pub fn process_updates(&self) {
+        match self.get_updates_manual() {
+            Ok(text) => {
+               self.process_update_from_string(&text);
+            },
+            Err(_) => {
+                panic!("so here's the thing....");
+            }
+        }
+    }
+
+    pub fn process_update_from_string(&self, update_string: &String)
+    {
+        let updates = self.get_updates(update_string).unwrap();
+
+        for i in updates {
+            if i.message.is_some() {
+                let message = i.message.unwrap();
+                let chat_id = message.chat.unwrap().id;
+                let s_chat_id = chat_id.to_string();
+                let flow_status = accept_incoming_message(&s_chat_id, &message.text.unwrap());
+
+                match flow_status {
+                    FlowStatus::Done => {
+                        let _ = self.send_message_to_user(chat_id, &"Your messages are scheduled!".to_owned());
+                    },
+                    FlowStatus::Step(coorespondance) => {
+                        self.use_coorespondance(chat_id, coorespondance);
+                    },
+                    FlowStatus::Error { message, desired_value: _ } => {
+                        let _ = self.send_message_to_user(chat_id, &message);
+                    }
+                }
+            }
+        }
+    }
+
+    fn use_coorespondance(&self, chat_id: i64, coorespondance: Coorespondance) {
+        let _ = match coorespondance.option_type {
+            OptionType::Date => self.send_message_to_user(chat_id, &coorespondance.message),
+            OptionType::Media => self.send_message_to_user(chat_id, &coorespondance.message),
+            OptionType::YesNo => self.send_message_to_user_with_yesno(chat_id, &coorespondance.message),
+            OptionType::Time => self.send_message_to_user(chat_id, &coorespondance.message),
+            OptionType::Options(options) => self.send_message_to_user_with_option_response(chat_id, &coorespondance.message, &options)
+        };
+    }
+
+    fn get_updates(&self, input: &String) -> core::result::Result<Vec<Update>,()>
+    {
+        match self.get_updates_webhook(input) {
+            Ok(obj) => return Ok(obj),
+            Err(_) => {} // nothing yet, still have another method to try...
+        }
+
+        match self.get_updates_from_manual(input) {
+            Ok(obj) => return Ok(obj.result),
+            Err(_) => return Err(())
+        }
+    }
+
+    fn get_updates_webhook(&self, input: &String) -> core::result::Result<Vec<Update>,()> {
+        match serde_json::from_str::<Vec<Update>>(&input) {
+            Ok(obj) => Ok(obj),
+            Err(_) => Err(())
+        }
+    }
+
+    fn get_updates_from_manual(&self, input: &String) -> core::result::Result<Response<Vec<Update>>, ()> {
+        match serde_json::from_str::<Response<Vec<Update>>>(&input) {
+            Ok(obj) => Ok(obj),
+            Err(_) => Err(())
+        }
+    }
+
+    fn get_updates_manual(&self) -> core::result::Result<String, ()> {
+        let url = self.values.get_url_updates(&self.token);
+
+        println!("{}", url);
+        match  self.client.get(&url).send() {
+            Ok(mut response) => {
+                let text = response.text().unwrap();
+                println!("{}", text);
+                Ok(text)
+            },
+            Err(_) => Err(())
+        }
     }
 }
