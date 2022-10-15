@@ -267,9 +267,14 @@ impl BotBoy {
         let flow_status = accept_incoming_message(&chat_id.to_string(), message);
 
         match flow_status {
+            FlowStatus::Cancelled => {
+                let _ =
+                self.send_message_to_user(chat_id, &"Cancelled. Send another message to start again.".to_owned());
+            },
             FlowStatus::Done => {
                 let _ =
                     self.send_message_to_user(chat_id, &"Your messages are scheduled!".to_owned());
+                
             }
             FlowStatus::Step(coorespondance) => {
                 self.use_coorespondance(chat_id, coorespondance);
@@ -284,21 +289,22 @@ impl BotBoy {
     }
 
     fn use_coorespondance(&self, chat_id: i64, coorespondance: Coorespondance) {
-        let response = match coorespondance.option_type {
-            OptionType::Date => self.send_message_to_user(chat_id, &coorespondance.message),
-            OptionType::Media => self.send_message_to_user(chat_id, &coorespondance.message),
+        let response: Option<::core::result::Result<::reqwest::Response, ::reqwest::Error>> = match coorespondance.option_type {
+            OptionType::Date => Some(self.send_message_to_user(chat_id, &coorespondance.message)),
+            OptionType::Media => Some(self.send_message_to_user(chat_id, &coorespondance.message)),
             OptionType::YesNo => {
-                self.send_message_to_user_with_yesno(chat_id, &coorespondance.message)
+                Some(self.send_message_to_user_with_yesno(chat_id, &coorespondance.message))
             }
-            OptionType::Time => self.send_message_to_user(chat_id, &coorespondance.message),
-            OptionType::Options(options) => self.send_message_to_user_with_option_response(
+            OptionType::Time => Some(self.send_message_to_user(chat_id, &coorespondance.message)),
+            OptionType::Options(options) => Some(self.send_message_to_user_with_option_response(
                 chat_id,
                 &coorespondance.message,
                 &options,
-            ),
+            )),
+            OptionType::None => None
         };
 
-        println!("{}", response.unwrap().text().unwrap());
+        println!("{}", response.unwrap().unwrap().text().unwrap());
     }
 
     fn get_updates(&self, input: &String) -> core::result::Result<Vec<Update>, ()> {

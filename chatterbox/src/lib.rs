@@ -1,9 +1,9 @@
 extern crate event_manager;
 
-use chrono::DateTime;
 use chrono::Datelike;
 use chrono::Month;
 use chrono::NaiveDate;
+use chrono::NaiveTime;
 use chrono::Utc;
 use event_manager::create_schedule;
 use event_manager::Config;
@@ -23,6 +23,7 @@ pub enum FlowStatus {
         message: String,
         desired_value: DesiredValue,
     },
+    Cancelled
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -44,6 +45,7 @@ pub enum DesiredValue {
     Chat,
     HasToken,
     Token,
+    None
 }
 
 pub enum UserInput {
@@ -86,13 +88,26 @@ impl ConfigInProgress {
     pub fn move_to_next_step(&mut self) {
         self.desired_value = match self.desired_value {
             DesiredValue::Message => DesiredValue::Frequency,
-            DesiredValue::Frequency => DesiredValue::StartMonth,
+            DesiredValue::Frequency => {
+                match self.schedule.as_ref().unwrap() {
+                    Schedule::Daily => DesiredValue::StartTime,
+                    _ => DesiredValue::StartMonth,
+                }
+            },
             DesiredValue::StartMonth => DesiredValue::StartDay,
             DesiredValue::StartDay => DesiredValue::StartTime,
             DesiredValue::StartTime => DesiredValue::Chat,
             DesiredValue::Chat => DesiredValue::HasToken,
-            DesiredValue::HasToken => DesiredValue::Token,
-            DesiredValue::Token => DesiredValue::Message,
+            DesiredValue::HasToken => {
+                if self.has_token.unwrap() {
+                    DesiredValue::Token
+                }
+                else {
+                    DesiredValue::None
+                }
+            },
+            DesiredValue::Token => DesiredValue::None,
+            DesiredValue::None => DesiredValue::None
         }
     }
 
@@ -112,6 +127,7 @@ impl ConfigInProgress {
                 },
                 None => FlowStatus::Step(self.get_message()),
             },
+            DesiredValue::None => FlowStatus::Done
         }
     }
 
@@ -157,6 +173,7 @@ impl ConfigInProgress {
                 message: "Please provide the bot token.".to_string(),
                 option_type: OptionType::Media,
             },
+            DesiredValue::None => Coorespondance { option_type: OptionType::None, message: "Your message is scheduled. Thank you!".to_owned() }
         }
     }
 }
@@ -167,6 +184,7 @@ pub enum OptionType {
     Time,
     Date,
     YesNo,
+    None
 }
 
 pub struct Coorespondance {
@@ -175,6 +193,11 @@ pub struct Coorespondance {
 }
 
 fn load_input(state: &mut ConfigInProgress, message: &String) -> Result<UserInput, String> {
+
+    if message.to_lowercase() == "/cancel" {
+        return Ok(UserInput::Cancel);
+    }
+
     match state.desired_value {
         DesiredValue::Message => Ok(UserInput::Message(message.to_owned())),
         DesiredValue::Chat => Ok(UserInput::Message(message.to_owned())),
@@ -187,7 +210,6 @@ fn load_input(state: &mut ConfigInProgress, message: &String) -> Result<UserInpu
             }
         }
         DesiredValue::StartMonth => {
-            println!("{}", message);
 
             let parse: Result<i32, ()> = match message.to_lowercase().as_str() {
                 "january" => Ok(1),
@@ -229,15 +251,18 @@ fn load_input(state: &mut ConfigInProgress, message: &String) -> Result<UserInpu
             }
         }
         DesiredValue::StartTime => {
-            let time = DateTime::parse_from_str(message, "%h:%M");
+            let time = NaiveTime::parse_from_str(message, "%H:%M");
 
             match time {
-                Err(_) => Err("Hmm... Sorry, I don't understand that. Can you send it in the 24-hour HH:MM format?".to_owned()),
+                Err(e) => {
+                    Err("Hmm... Sorry, I don't understand that. Can you send it in the 24-hour HH:MM format?".to_owned())
+                }
                 Ok(_) => Ok(UserInput::Time(message.to_owned())),
             }
         }
         DesiredValue::HasToken => Ok(UserInput::YesNo(message.to_lowercase() == "yes")),
         DesiredValue::Token => Ok(UserInput::Message(message.to_owned())),
+        DesiredValue::None => Ok(UserInput::Message(message.to_owned()))
     }
 }
 
@@ -269,10 +294,10 @@ fn process_incoming_message(
     match message {
         UserInput::Cancel => {
             delete_state(u_id);
-            FlowStatus::Done
+            FlowStatus::Cancelled
         }
         _ => {
-            match state.desired_value {
+            let closed = match state.desired_value {
                 DesiredValue::Message => process_desired_message(state, message),
                 DesiredValue::Frequency => process_frequency(state, message),
                 DesiredValue::StartDay => process_month_day(state, message),
@@ -281,17 +306,23 @@ fn process_incoming_message(
                 DesiredValue::Chat => process_chat(state, message),
                 DesiredValue::HasToken => process_has_token(state, message, u_id),
                 DesiredValue::Token => process_token(state, message, u_id),
+                DesiredValue::None => true
             };
 
-            state.move_to_next_step();
+            if !closed {
+                state.move_to_next_step();
+                save_state(u_id, state);
+                state.get_flow_status()
+            } else {
+                FlowStatus::Done
+            }
 
-            save_state(u_id, state);
-            state.get_flow_status()
+
         }
     }
 }
 
-fn process_desired_message(config_in_progress: &mut ConfigInProgress, message: UserInput) {
+fn process_desired_message(config_in_progress: &mut ConfigInProgress, message: UserInput) -> bool {
     match message {
         UserInput::Message(desired_message) => {
             config_in_progress.message = Some(Message::Message(desired_message));
@@ -299,16 +330,20 @@ fn process_desired_message(config_in_progress: &mut ConfigInProgress, message: U
         UserInput::Media(id) => config_in_progress.message = Some(Message::Media(id)),
         _ => panic!("Unsupported Input type"),
     }
+
+    false
 }
 
-fn process_frequency<'a>(config_in_progress: &mut ConfigInProgress, message: UserInput) {
+fn process_frequency<'a>(config_in_progress: &mut ConfigInProgress, message: UserInput) -> bool {
     match message {
         UserInput::Frequency(frequency) => config_in_progress.schedule = Some(frequency),
         _ => panic!("Unsupported Input type"),
     }
+
+    false
 }
 
-fn process_month_day(config_in_progress: &mut ConfigInProgress, message: UserInput) {
+fn process_month_day(config_in_progress: &mut ConfigInProgress, message: UserInput) -> bool {
     match message {
         
         UserInput::Message(date) => {
@@ -316,30 +351,38 @@ fn process_month_day(config_in_progress: &mut ConfigInProgress, message: UserInp
         }
         _ => panic!("Unsupported Input type"),
     }
+
+    false
 }
 
-fn process_month(config_in_progress: &mut ConfigInProgress, message: UserInput) {
+fn process_month(config_in_progress: &mut ConfigInProgress, message: UserInput) -> bool {
     match message {
         UserInput::Message(date) => config_in_progress.first_execution_month = Some(date),
         _ => panic!("Unsupported Input type"),
     }
+
+    false
 }
 
-fn process_time(config_in_progress: &mut ConfigInProgress, message: UserInput) {
+fn process_time(config_in_progress: &mut ConfigInProgress, message: UserInput) -> bool {
     match message {
         UserInput::Time(time) => config_in_progress.first_execution_time = Some(time),
         _ => panic!("Unsupported Input type"),
     }
+
+    false
 }
 
-fn process_chat(confing_in_progress: &mut ConfigInProgress, message: UserInput) {
+fn process_chat(confing_in_progress: &mut ConfigInProgress, message: UserInput) -> bool {
     match message {
         UserInput::Message(string) => confing_in_progress.chat_id = Some(string),
         _ => panic!("Unsupported Input Type"),
     }
+
+    false
 }
 
-fn process_has_token(config_in_progress: &mut ConfigInProgress, message: UserInput, u_id: &String) {
+fn process_has_token(config_in_progress: &mut ConfigInProgress, message: UserInput, u_id: &String) -> bool {
     match message {
         UserInput::YesNo(answer) => {
             config_in_progress.has_token = Some(answer);
@@ -347,6 +390,10 @@ fn process_has_token(config_in_progress: &mut ConfigInProgress, message: UserInp
             if !answer {
                 // flow is now done!
                 close(u_id, config_in_progress);
+                true
+            }
+            else {
+                false
             }
         }
 
@@ -354,13 +401,14 @@ fn process_has_token(config_in_progress: &mut ConfigInProgress, message: UserInp
     }
 }
 
-fn process_token(config_in_progress: &mut ConfigInProgress, message: UserInput, u_id: &String) {
+fn process_token(config_in_progress: &mut ConfigInProgress, message: UserInput, u_id: &String) -> bool {
     match message {
         UserInput::Message(token) => config_in_progress.token = Some(token),
         _ => panic!("Unsupported Input Type"),
     }
 
     close(u_id, config_in_progress);
+    true
 }
 
 fn get_first_execution_date(state: &ConfigInProgress) -> NaiveDate {
@@ -463,7 +511,6 @@ fn get_state(u_id: &String) -> (ConfigInProgress, bool) {
 fn save_state(u_id: &String, config_in_progress: &ConfigInProgress) {
     let file_path = format!("./in_progress/{}", &u_id);
 
-    println!("{}", file_path);
     let path = Path::new(&file_path);
     let contents = serde_yaml::to_string(config_in_progress).unwrap();
     let file = File::create(path);
@@ -540,9 +587,8 @@ fn get_option_days(month: &String) -> Vec<Vec<String>> {
     let mut i = 1;
     let mut j = 0;
     let mut index = 0;
-    while i < get_days_by_month(month) {
+    while i <= get_days_by_month(month) {
         result.get_mut(index).unwrap().push(i.to_string());
-        print!("{} - ", i);
         i+=1;
         j+=1;
 

@@ -3,7 +3,7 @@ extern crate yaml_rust;
 
 use chrono::{Month, Weekday};
 use serde::{Deserialize, Serialize};
-use std::{fs::File, io::Write};
+use std::{fs::{File, create_dir_all}, io::Write, path::Path};
 
 #[derive(Serialize, Deserialize)]
 pub struct Config {
@@ -57,12 +57,12 @@ impl Schedule {
     pub fn get_file_location(self, u_id: &String) -> String {
         match self {
             Schedule::Daily { time } => {
-                format!("/recurring/daily/{}/{}", &time, &u_id)
+                format!("recurring/daily/{}/{}", &time, &u_id)
             }
 
             Schedule::Weekly { weekday, time } => {
                 format!(
-                    "/recurring/weekly/{}/{}/{}",
+                    "recurring/weekly/{}/{}/{}",
                     &get_weekday_display(weekday),
                     &time,
                     &u_id
@@ -72,7 +72,7 @@ impl Schedule {
             Schedule::BiWeekly { weekday, time, odd } => {
                 let odd_string = if odd { "1" } else { "0" };
                 format!(
-                    "/recurring/biweekly/{}/{}/{}/{}",
+                    "recurring/biweekly/{}/{}/{}/{}",
                     &odd_string,
                     &get_weekday_display(weekday),
                     &time,
@@ -81,12 +81,12 @@ impl Schedule {
             }
 
             Schedule::Monthly { day, time } => {
-                format!("/recurring/monthly/{}/{}/{}", &day, &time, &u_id)
+                format!("recurring/monthly/{}/{}/{}", &day, &time, &u_id)
             }
 
             Schedule::Yearly { day, time, month } => {
                 format!(
-                    "/recurring/yearly/{}/{}/{}/{}",
+                    "recurring/yearly/{}/{}/{}/{}",
                     &month.number_from_month(),
                     &day,
                     &time,
@@ -106,7 +106,12 @@ pub fn create_schedule(
 
     let file_name = schedule.get_file_location(user_id);
 
-    let mut file = File::create(file_name).unwrap();
+    println!("{}", file_name);
+    let path = Path::new(&file_name);
+
+    create_dir_all(&path.parent().unwrap()).unwrap();
+
+    let mut file = File::create(path).unwrap();
 
     file.write_all(file_content.as_bytes())
 }
@@ -122,7 +127,7 @@ pub mod tests {
         };
         let res = schedule.get_file_location("test".as_ref());
 
-        assert_eq!(res, "/recurring/daily/12:02/test")
+        assert_eq!(res, "recurring/daily/12:02/test")
     }
 
     #[test]
@@ -133,7 +138,7 @@ pub mod tests {
         };
         let res = schedule.get_file_location("test2".as_ref());
 
-        assert_eq!(res, "/recurring/weekly/monday/3:02/test2")
+        assert_eq!(res, "recurring/weekly/monday/3:02/test2")
     }
 
     #[test]
@@ -144,7 +149,7 @@ pub mod tests {
         };
         let res = schedule.get_file_location("alan".as_ref());
 
-        assert_eq!(res, "/recurring/monthly/3/10:56/alan")
+        assert_eq!(res, "recurring/monthly/3/10:56/alan")
     }
 
     #[test]
@@ -156,7 +161,7 @@ pub mod tests {
         };
         let res = schedule.get_file_location("bob".as_ref());
 
-        assert_eq!("/recurring/biweekly/1/tuesday/00:00/bob", res)
+        assert_eq!("recurring/biweekly/1/tuesday/00:00/bob", res)
     }
 
     #[test]
@@ -168,6 +173,6 @@ pub mod tests {
         };
         let res: String = schedule.get_file_location("santa".as_ref());
 
-        assert_eq!("/recurring/yearly/12/25/10:00/santa", res)
+        assert_eq!("recurring/yearly/12/25/10:00/santa", res)
     }
 }
