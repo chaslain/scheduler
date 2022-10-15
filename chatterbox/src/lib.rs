@@ -55,6 +55,8 @@ pub enum UserInput {
     Date(String),
     Media(String),
     YesNo(bool),
+    List,
+    Delete(String),
     Cancel,
 }
 
@@ -198,6 +200,10 @@ fn load_input(state: &mut ConfigInProgress, message: &String) -> Result<UserInpu
         return Ok(UserInput::Cancel);
     }
 
+    if message.to_lowercase() == "/list" {
+        return Ok(UserInput::List);
+    }
+
     match state.desired_value {
         DesiredValue::Message => Ok(UserInput::Message(message.to_owned())),
         DesiredValue::Chat => Ok(UserInput::Message(message.to_owned())),
@@ -254,7 +260,7 @@ fn load_input(state: &mut ConfigInProgress, message: &String) -> Result<UserInpu
             let time = NaiveTime::parse_from_str(message, "%H:%M");
 
             match time {
-                Err(e) => {
+                Err(_) => {
                     Err("Hmm... Sorry, I don't understand that. Can you send it in the 24-hour HH:MM format?".to_owned())
                 }
                 Ok(_) => Ok(UserInput::Time(message.to_owned())),
@@ -295,6 +301,9 @@ fn process_incoming_message(
         UserInput::Cancel => {
             delete_state(u_id);
             FlowStatus::Cancelled
+        },
+        UserInput::List => {
+            process_list(u_id)
         }
         _ => {
             let closed = match state.desired_value {
@@ -635,6 +644,10 @@ fn get_month_from_int(item: i32) -> Option<Month>{
         12 => Some(Month::December),
         _ => None
     }
+}
+
+fn process_list(_u_id: &String) -> FlowStatus {
+    FlowStatus::Done
 }
 
 #[cfg(test)]

@@ -3,7 +3,8 @@ extern crate yaml_rust;
 
 use chrono::{Month, Weekday};
 use serde::{Deserialize, Serialize};
-use std::{fs::{File, create_dir_all}, io::Write, path::Path};
+use std::{fs::{File, create_dir_all}, io::Write, path::Path, os::unix::fs::symlink};
+
 
 #[derive(Serialize, Deserialize)]
 pub struct Config {
@@ -101,20 +102,71 @@ pub fn create_schedule(
     user_id: &String,
     configuration: Config,
     schedule: Schedule,
-) -> std::io::Result<()> {
-    let file_content = serde_yaml::to_string(&configuration).unwrap();
-
-    let file_name = schedule.get_file_location(user_id);
-
-    println!("{}", file_name);
-    let path = Path::new(&file_name);
-
-    create_dir_all(&path.parent().unwrap()).unwrap();
-
-    let mut file = File::create(path).unwrap();
-
-    file.write_all(file_content.as_bytes())
+) -> bool {
+    match create_schedule_main(user_id, configuration, schedule) {
+        Ok(path) => {
+            create_schedule_index(user_id, &path)
+        }
+        Err(()) => false
+    }
 }
+
+fn create_schedule_index(user_id: &String, path_str: &String) -> bool {
+
+    let path = Path::new(path_str);
+    let sym_directory = format!("users/{}", user_id);
+    let sym_path_directory = Path::new(&sym_directory);
+
+    let mut i = 0;
+
+    if sym_path_directory.exists() {
+        for _ in sym_path_directory.read_dir() { // not concerned with files themselves, just how many there are...
+            i += 1;
+        }
+    }
+    else
+    {
+        _ = create_dir_all(sym_path_directory);
+    }
+
+    let sym = format!("users/{}/{}", user_id, i.to_string());
+    let sym_path = Path::new(&sym);
+
+    match symlink(path, sym_path) {
+        Ok(_) => true,
+        Err(_) => false
+    }
+
+
+    
+}
+
+fn create_schedule_main(    user_id: &String,
+    configuration: Config,
+    schedule: Schedule) -> Result<String, ()> {
+        let file_content = serde_yaml::to_string(&configuration).unwrap();
+
+        let file_name = schedule.get_file_location(user_id);
+    
+        println!("{}", file_name);
+        let path = Path::new(&file_name);
+    
+        create_dir_all(&path.parent().unwrap()).unwrap();
+    
+        let mut file = File::create(path).unwrap();
+    
+        match file.write_all(file_content.as_bytes()) {
+            Ok(_) => {
+                Ok(file_name)
+            },
+            Err(_) => Err(())
+        }
+
+    }
+
+// pub fn list_user_jobs(user_id: &String) -> Vec<Config> {
+
+// }
 
 #[cfg(test)]
 pub mod tests {
