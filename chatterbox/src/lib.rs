@@ -53,6 +53,7 @@ pub enum DesiredValue {
 
 pub enum UserInput {
     Message(String),
+    ChatLink(String),
     Frequency(Schedule),
     Time(String),
     Date(String),
@@ -167,7 +168,7 @@ impl ConfigInProgress {
                 option_type: OptionType::Time,
             },
             DesiredValue::Chat => Coorespondance {
-                message: "Please link the chat or channel where this message will be posted."
+                message: "Please \"mention\" the chat or channel where you would like the data posted."
                     .to_string(),
                 option_type: OptionType::Media,
             },
@@ -214,7 +215,15 @@ fn load_input(state: &mut ConfigInProgress, message: &String) -> Result<UserInpu
     match state.desired_value {
         DesiredValue::Start => Ok(UserInput::Message(message.to_owned())),
         DesiredValue::Message => Ok(UserInput::Message(message.to_owned())),
-        DesiredValue::Chat => Ok(UserInput::Message(message.to_owned())),
+        DesiredValue::Chat => { 
+            // note - bad links would have since been turned into INVALID - which does not start with an '@' ;)
+            if message.starts_with('@') {
+                Ok(UserInput::Message(message.to_owned()))
+            }
+            else {
+                Err("Please provide a valid chat by \"mentioning\" it.".to_owned())
+            }
+        },
         DesiredValue::Frequency => {
             let parse = UserInput::parse_frequency(message);
             if parse.is_err() {
@@ -285,7 +294,7 @@ fn load_input(state: &mut ConfigInProgress, message: &String) -> Result<UserInpu
 
 pub fn accept_incoming_message(u_id: &String, message: &String) -> FlowStatus {
     // first thing we have to do is stick this into an enum.
-    let (mut state, already_exists) = get_state(&u_id);
+    let mut state = get_state(&u_id);
 
 
     let validate = load_input(&mut state, message);
@@ -504,7 +513,7 @@ fn close(u_id: &String, config_in_progress: &mut ConfigInProgress) {
     }
 }
 
-fn get_state(u_id: &String) -> (ConfigInProgress, bool) {
+fn get_state(u_id: &String) -> ConfigInProgress {
     let file_name: String = format!("in_progress/{}", u_id);
 
     let path = Path::new(&file_name);
@@ -512,22 +521,20 @@ fn get_state(u_id: &String) -> (ConfigInProgress, bool) {
     if Path::exists(path) {
         let contents = read_to_string(path).unwrap();
 
-        (serde_yaml::from_str(&contents).unwrap(), true)
+        serde_yaml::from_str(&contents).unwrap()
     } else {
-        (
-            ConfigInProgress {
-                schedule: None,
-                first_execution_day: None,
-                first_execution_month: None,
-                first_execution_time: None,
-                desired_value: DesiredValue::Start,
-                has_token: None,
-                chat_id: None,
-                message: None,
-                token: None,
-            },
-            false,
-        )
+        
+        ConfigInProgress {
+            schedule: None,
+            first_execution_day: None,
+            first_execution_month: None,
+            first_execution_time: None,
+            desired_value: DesiredValue::Start,
+            has_token: None,
+            chat_id: None,
+            message: None,
+            token: None,
+        }
     }
 }
 

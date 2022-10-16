@@ -29,8 +29,9 @@ struct Chat {
 }
 
 #[derive(Serialize, Deserialize)]
-struct InlineQuery {}
-
+struct GetChat {
+    chat_id: String
+}
 #[derive(Serialize, Deserialize)]
 struct CallbackQuery {
     id: String,
@@ -62,6 +63,20 @@ struct Message {
     text: Option<String>,
     video: Option<File>,
     document: Option<File>,
+    entities: Option<Vec<Entity>>
+}
+
+#[derive(Serialize, Deserialize)]
+struct Entity {
+    offset: i32,
+    length: i32,
+    #[serde(rename = "type")]
+    _type: String
+}
+
+#[derive(Serialize, Deserialize)]
+struct BareResponse {
+    ok: bool
 }
 
 struct Values {
@@ -99,6 +114,10 @@ impl Values {
 
     pub fn get_url_updates(&self, token: &String) -> String {
         format!("{}{}/getUpdates", self.base_url, token)
+    }
+
+    pub fn get_url_chat(&self, token: &String) -> String {
+        format!("{}{}/getChat", self.base_url, token)
     }
 }
 
@@ -247,7 +266,7 @@ impl BotBoy {
 
     fn handle_message_update(&self, i: Update) {
         let message = i.message.unwrap();
-        let (text, chat_id) = get_string_from_message(message);
+        let (text, chat_id) = self.get_string_from_message(message);
         self.update_from_string(chat_id, &text);
     }
 
@@ -357,19 +376,47 @@ impl BotBoy {
             .query(&[("offset", &(id + 1).to_string())])
             .send();
     }
-}
 
-fn get_string_from_message(message: Message) -> (String, i64) {
-    if message.text.is_some() {
-        (message.text.unwrap(), message.chat.unwrap().id)
-    } else if message.video.is_some() {
-        (message.video.unwrap().file_id, message.chat.unwrap().id)
-    } else if message.document.is_some() {
-        (message.document.unwrap().file_id, message.chat.unwrap().id)
-    } else {
-        panic!("Unsupported message type");
+    pub fn get_chat(&self, chat_id: &String) -> String {
+        let url = self.values.get_url_chat(&self.token);
+
+        let response = self.send_object(&url, GetChat {
+            chat_id: chat_id.to_owned()
+        });
+
+        let update: BareResponse = serde_json::from_str(&response.unwrap().text().unwrap()).unwrap();
+
+        if update.ok {
+            chat_id.to_owned()
+        } else {
+            "INVALID".to_owned()
+        }
+
+    }
+
+    fn get_string_from_message(&self, message: Message) -> (String, i64) {
+    
+        if message.entities.is_some() {
+            let entities = message.entities.unwrap();
+            let entity = entities.get(0).unwrap();
+            let offset = entity.offset;
+            let length = entity.length;
+            let text = message.text.unwrap();
+            let result = &text[offset as usize..length as usize];
+            (self.get_chat(&result.to_string()), message.chat.unwrap().id)
+        }
+        else if message.text.is_some() {
+            (message.text.unwrap(), message.chat.unwrap().id)
+        } else if message.video.is_some() {
+            (message.video.unwrap().file_id, message.chat.unwrap().id)
+        } else if message.document.is_some() {
+            (message.document.unwrap().file_id, message.chat.unwrap().id)
+        } else {
+            panic!("Unsupported message type");
+        }
     }
 }
+
 
 fn get_string_from_query(query: CallbackQuery) -> (String, i64) {
     (query.data, query.message.chat.unwrap().id)
