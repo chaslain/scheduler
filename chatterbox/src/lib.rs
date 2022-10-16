@@ -1,13 +1,12 @@
-extern crate event_manager;
-
 use chrono::Datelike;
 use chrono::Month;
 use chrono::NaiveDate;
 use chrono::NaiveTime;
 use chrono::Utc;
 use event_manager::create_schedule;
+use event_manager::get_config;
 use event_manager::Config;
-use event_manager::Message;
+pub use event_manager::Message;
 use event_manager::Schedule as emSchedule;
 use serde::{Deserialize, Serialize};
 use std::fs::read_link;
@@ -27,6 +26,7 @@ pub enum FlowStatus {
     },
     Cancelled,
     Info(String),
+    Media(event_manager::Message),
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -57,7 +57,7 @@ pub enum UserInput {
     Frequency(Schedule),
     Time(String),
     Date(String),
-    Media(String),
+    Media(Message),
     YesNo(bool),
     Delete(String),
     Command(Command),
@@ -68,6 +68,7 @@ pub enum Command {
     Cancel,
     List,
     Delete(String),
+    View(String),
 }
 
 impl Command {
@@ -95,13 +96,18 @@ impl Command {
                 );
                 FlowStatus::Step(Coorespondance {
                     option_type: OptionType::Media,
-                    message: "Please send the message you'd like sent".to_owned(),
+                    message: "Please send the message you'd like sent.".to_owned(),
                 })
             }
             Command::Delete(to_delete) => {
                 event_manager::delete_scheduled(u_id, to_delete.parse::<i32>().unwrap());
                 FlowStatus::DoneWithMessage(format!("Successfully deleted message #{}", to_delete))
             }
+            Command::View(to_view) => FlowStatus::Media(
+                get_config(u_id, to_view.parse::<i32>().unwrap())
+                    .unwrap()
+                    .message,
+            ),
         }
     }
 }
@@ -242,7 +248,47 @@ pub struct Coorespondance {
     pub message: String,
 }
 
-fn load_input(state: &mut Option<ConfigInProgress>, message: &String) -> Result<UserInput, String> {
+fn load_input(
+    state: &mut Option<ConfigInProgress>,
+    message: &Message,
+) -> Result<UserInput, String> {
+    match message {
+        Message::Message(text) => load_text_input(state, text),
+        Message::Audio(id) => match state {
+            Some(state) => match state.desired_value {
+                DesiredValue::Message => Ok(UserInput::Media(Message::Audio(id.to_string()))),
+                _ => get_error(&state.desired_value),
+            },
+            None => Err("Hi! To get started, use /start.".to_string()),
+        },
+        Message::Photo(id) => match state {
+            Some(state) => match state.desired_value {
+                DesiredValue::Message => Ok(UserInput::Media(Message::Photo(id.to_string()))),
+                _ => get_error(&state.desired_value),
+            },
+            None => Err("Hi! To get started, use /start.".to_string()),
+        },
+        Message::Video(id) => match state {
+            Some(state) => match state.desired_value {
+                DesiredValue::Message => Ok(UserInput::Media(Message::Video(id.to_string()))),
+                _ => get_error(&state.desired_value),
+            },
+            None => Err("Hi! To get started, use /start.".to_string()),
+        },
+        Message::Document(id) => match state {
+            Some(state) => match state.desired_value {
+                DesiredValue::Message => Ok(UserInput::Media(Message::Document(id.to_string()))),
+                _ => get_error(&state.desired_value),
+            },
+            None => Err("Hi! To get started, use /start.".to_string()),
+        },
+    }
+}
+
+fn load_text_input(
+    state: &mut Option<ConfigInProgress>,
+    message: &String,
+) -> Result<UserInput, String> {
     if message.starts_with("/") {
         return load_command(message);
     }
@@ -255,13 +301,13 @@ fn load_input(state: &mut Option<ConfigInProgress>, message: &String) -> Result<
                 if message.starts_with('@') {
                     Ok(UserInput::Message(message.to_owned()))
                 } else {
-                    Err("Please provide a valid chat by \"mentioning\" it.".to_owned())
+                    get_error(&state.desired_value)
                 }
             }
             DesiredValue::Frequency => {
                 let parse = UserInput::parse_frequency(message);
                 if parse.is_err() {
-                    Err("Please select a frequency.".to_owned())
+                    get_error(&state.desired_value)
                 } else {
                     Ok(parse.unwrap())
                 }
@@ -288,9 +334,7 @@ fn load_input(state: &mut Option<ConfigInProgress>, message: &String) -> Result<
                         state.first_execution_month = Some(message.to_owned());
                         Ok(UserInput::Message(message.to_owned()))
                     }
-                    Err(()) => Err(
-                        "Please use one of the provided buttons to select your month.".to_string(),
-                    ),
+                    Err(()) => get_error(&state.desired_value),
                 }
             }
             DesiredValue::StartDay => {
@@ -305,19 +349,14 @@ fn load_input(state: &mut Option<ConfigInProgress>, message: &String) -> Result<
                             Ok(UserInput::Message(message.to_owned()))
                         }
                     }
-                    Err(_) => {
-                        Err("Please use one of the provided buttons to select your day."
-                            .to_string())
-                    }
+                    Err(_) => get_error(&state.desired_value),
                 }
             }
             DesiredValue::StartTime => {
                 let time = NaiveTime::parse_from_str(message, "%H:%M");
 
                 match time {
-                    Err(_) => {
-                        Err("Hmm... Sorry, I don't understand that. Can you send it in the 24-hour HH:MM format?".to_owned())
-                    }
+                    Err(_) => get_error(&state.desired_value),
                     Ok(_) => Ok(UserInput::Time(message.to_owned())),
                 }
             }
@@ -325,7 +364,7 @@ fn load_input(state: &mut Option<ConfigInProgress>, message: &String) -> Result<
             DesiredValue::Token => Ok(UserInput::Message(message.to_owned())),
             DesiredValue::None => Ok(UserInput::Message(message.to_owned())),
         },
-        None => Err("Hi! to get started, use /start.".to_string()),
+        None => Err("Hi! To get started, use /start.".to_string()),
     }
 }
 
@@ -337,6 +376,16 @@ fn load_command(message: &String) -> Result<UserInput, String> {
         "/start" => Ok(UserInput::Command(Command::Start)),
         "/cancel" => Ok(UserInput::Command(Command::Cancel)),
         "/list" => Ok(UserInput::Command(Command::List)),
+        "/view" => match words.get(1) {
+            Some(val) => match val.parse::<i32>() {
+                Ok(_) => Ok(UserInput::Command(Command::View(val.to_string()))),
+                Err(_) => Err(
+                    "Please provide a valid number cooresponding to the job you'd like to view."
+                        .to_owned(),
+                ),
+            },
+            None => Err("View requires exactly one argument".to_owned()),
+        },
         "/delete" => match words.get(1) {
             Some(val) => match val.parse::<i32>() {
                 Ok(_) => Ok(UserInput::Command(Command::Delete(val.to_string()))),
@@ -350,11 +399,11 @@ fn load_command(message: &String) -> Result<UserInput, String> {
         _ => Err("Invalid command.".to_owned()),
     }
 }
-pub fn accept_incoming_message(u_id: &String, message: &String) -> FlowStatus {
+pub fn accept_incoming_message(u_id: &String, message: &Message) -> FlowStatus {
     // first thing we have to do is stick this into an enum.
     let mut state = get_state(&u_id);
 
-    let validate = load_input(&mut state, message);
+    let validate = load_input(&mut state, &message);
 
     match validate {
         Ok(input) => process_incoming_message(u_id, input, &mut state),
@@ -410,7 +459,9 @@ fn process_desired_message(config_in_progress: &mut ConfigInProgress, message: U
         UserInput::Message(desired_message) => {
             config_in_progress.message = Some(Message::Message(desired_message));
         }
-        UserInput::Media(id) => config_in_progress.message = Some(Message::Media(id)),
+        UserInput::Media(msg) => {
+            config_in_progress.message = Some(msg);
+        }
         _ => panic!("Unsupported Input type"),
     }
 
@@ -725,26 +776,36 @@ fn process_list(u_id: &String) -> FlowStatus {
 
         let real_path = read_link(path).unwrap().to_str().unwrap().to_string();
         let all_directories = real_path.split("/").collect::<Vec<&str>>();
+        let data = serde_yaml::from_str::<Config>(&read_to_string(&real_path).unwrap()).unwrap();
         let frequency = all_directories.get(1).unwrap();
         let info = match *frequency {
             "daily" => {
                 let time = all_directories.get(2).unwrap();
-                format!("{}: Sent daily at {}\n", i, time)
+                format!("{}: Sent daily at {} to {} \n", i, time, data.chat_id)
             }
             "weekly" => {
                 let weekday = all_directories.get(2).unwrap();
                 let time = all_directories.get(3).unwrap();
-                format!("{}: Sent weekly on {} at {}\n", i, weekday, time)
+                format!(
+                    "{}: Sent weekly on {} at {} to {}\n",
+                    i, weekday, time, data.chat_id
+                )
             }
             "biweekly" => {
                 let weekday = all_directories.get(3).unwrap();
                 let time = all_directories.get(4).unwrap();
-                format!("{}: Sent bi-weekly on {} at {}\n", i, weekday, time)
+                format!(
+                    "{}: Sent bi-weekly on {} at {} to {}\n",
+                    i, weekday, time, data.chat_id
+                )
             }
             "monthly" => {
                 let day = all_directories.get(2).unwrap().parse::<i32>().unwrap();
                 let time = all_directories.get(3).unwrap();
-                format!("{}: Sent monthly on day {} at {}\n", i, day, time)
+                format!(
+                    "{}: Sent monthly on day {} at {} to {}\n",
+                    i, day, time, data.chat_id
+                )
             }
             "yearly" => {
                 let day = all_directories.get(3).unwrap().parse::<i32>().unwrap();
@@ -753,8 +814,8 @@ fn process_list(u_id: &String) -> FlowStatus {
                 let month_name =
                     string_from_month(get_month_from_int(month.parse::<i32>().unwrap()).unwrap());
                 format!(
-                    "{}: Sent yearly on {} on day {} at {}\n",
-                    i, month_name, day, time
+                    "{}: Sent yearly on {} on day {} at {} to {}\n",
+                    i, month_name, day, time, data.chat_id
                 )
             }
             _ => "".to_owned(),
@@ -783,6 +844,34 @@ fn string_from_month(month: Month) -> String {
     };
 
     item.to_string()
+}
+
+fn get_error(desired_value: &DesiredValue) -> Result<UserInput, String> {
+    match desired_value {
+        DesiredValue::Chat => Err(
+            "Please provide a chat or channel by mentioning it (using @ before the name.)"
+                .to_owned(),
+        ),
+        DesiredValue::Frequency => {
+            Err("Please use the provided buttons to select a frequency.".to_owned())
+        }
+        DesiredValue::HasToken => {
+            Err("Please use the provided buttons to select Yes/No.".to_owned())
+        }
+        DesiredValue::Message => Err("Please provide a message to send.".to_owned()),
+        DesiredValue::None => Err("".to_owned()),
+        DesiredValue::StartDay => Err("Please use the desired buttons to select a day.".to_owned()),
+        DesiredValue::StartMonth => {
+            Err("Please use the provided buttons to choose a month.".to_owned())
+        }
+        DesiredValue::StartTime => {
+            Err("Please provide a 24-hour time in the hour:minute format.".to_owned())
+        }
+        DesiredValue::HasToken => {
+            Err("Please use the provided buttons to select Yes/No.".to_owned())
+        }
+        DesiredValue::Token => Err("Please provide the bot token.".to_owned()),
+    }
 }
 
 #[cfg(test)]

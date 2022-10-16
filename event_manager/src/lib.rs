@@ -1,10 +1,7 @@
-extern crate serde_yaml;
-extern crate yaml_rust;
-
 use chrono::{Month, Weekday};
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::{create_dir_all, read_link, remove_file, File},
+    fs::{create_dir_all, read_link, read_to_string, remove_file, File},
     io::Write,
     os::unix::fs::symlink,
     path::Path,
@@ -19,7 +16,10 @@ pub struct Config {
 #[derive(Serialize, Deserialize, Clone)]
 pub enum Message {
     Message(String),
-    Media(String),
+    Photo(String),
+    Video(String),
+    Audio(String),
+    Document(String),
 }
 
 pub enum Schedule {
@@ -118,8 +118,6 @@ fn create_schedule_index(user_id: &String, path_str: &String) -> bool {
 
     if sym_path_directory.exists() {
         for _ in sym_path_directory.read_dir().unwrap() {
-            println!();
-            // not concerned with files themselves, just how many there are...
             i += 1;
         }
     } else {
@@ -170,6 +168,20 @@ pub fn delete_scheduled(user_id: &String, number: i32) {
         }
 
         _ = remove_file(sym_path);
+    }
+}
+
+pub fn get_config(user_id: &String, number: i32) -> Result<Config, ()> {
+    let sym_file_path = format!("users/{}/{}", user_id, number);
+
+    let sym_path = Path::new(&sym_file_path);
+
+    match read_link(sym_path) {
+        Ok(file) => {
+            let data = read_to_string(file).unwrap();
+            Ok(serde_yaml::from_str(&data).unwrap())
+        }
+        Err(_) => Err(()),
     }
 }
 

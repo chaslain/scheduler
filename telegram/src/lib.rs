@@ -1,9 +1,9 @@
-extern crate chatterbox;
-extern crate serde_json;
+pub extern crate chatterbox;
 
 use chatterbox::accept_incoming_message;
 use chatterbox::Coorespondance;
 use chatterbox::FlowStatus;
+use chatterbox::Message as ChatterMessage;
 use chatterbox::OptionType;
 use reqwest::Client;
 use reqwest::Result;
@@ -57,12 +57,20 @@ struct SendMessage {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum SendMedia {
+    Photo { chat_id: String, photo: String },
+    Video { chat_id: String, video: String },
+    Audio { chat_id: String, video: String },
+}
+#[derive(Serialize, Deserialize)]
 struct Message {
     chat: Option<Chat>,
     from: Option<User>,
     text: Option<String>,
-    video: Option<File>,
-    document: Option<File>,
+    video: Option<Vec<File>>,
+    document: Option<Vec<File>>,
+    photo: Option<Vec<File>>,
     entities: Option<Vec<Entity>>,
 }
 
@@ -81,7 +89,6 @@ struct BareResponse {
 
 struct Values {
     base_url: String,
-    send_url: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -99,7 +106,6 @@ impl Values {
     pub fn new() -> Values {
         Values {
             base_url: String::from("https://api.telegram.org/bot"),
-            send_url: String::from("sendMessage"),
         }
     }
 
@@ -107,7 +113,7 @@ impl Values {
         let mut result = self.base_url.to_owned();
         result.push_str(token);
         result.push('/');
-        result.push_str(&self.send_url);
+        result.push_str("sendMessage");
 
         result
     }
@@ -118,6 +124,10 @@ impl Values {
 
     pub fn get_url_chat(&self, token: &String) -> String {
         format!("{}{}/getChat", self.base_url, token)
+    }
+
+    pub fn get_url_photo(&self, token: &String) -> String {
+        format!("{}{}/sendPhoto", self.base_url, token)
     }
 }
 
@@ -139,6 +149,23 @@ impl BotBoy {
             token: env::var("BOT_TOKEN").unwrap(),
             values: Values::new(),
             client: Client::new(),
+        }
+    }
+
+    pub fn send_media_to_user(&self, user_id: i64, message: ChatterMessage) {
+        match message {
+            ChatterMessage::Message(text) => {
+                _ = self.send_message_to_user(user_id, &text);
+            }
+            ChatterMessage::Photo(id) => {
+                match self.send_photo(&user_id.to_string(), &id) {
+                    Ok(()) => {},
+                    Err(e) => {}
+                }
+            },
+            ChatterMessage::Audio(id) => {}
+            ChatterMessage::Video(id) => {}
+            ChatterMessage::Document(id) => {}
         }
     }
 
@@ -207,6 +234,8 @@ impl BotBoy {
     fn send_object<T: Serialize>(&self, url: &String, object: T) -> Result<reqwest::Response> {
         let body = to_string(&object).unwrap();
 
+        println!("{}", body);
+
         let req = self
             .client
             .post(url.as_str())
@@ -237,7 +266,10 @@ impl BotBoy {
     }
 
     pub fn process_update_from_string(&self, update_string: &String) -> Option<i64> {
-        let updates = self.get_updates(update_string).unwrap();
+        let updates = match self.get_updates(update_string) {
+            Ok(data) => data,
+            Err(_) => panic!("problem!!"),
+        };
 
         if updates.last().is_some() {
             let result = Some(updates.last().unwrap().update_id);
@@ -261,16 +293,16 @@ impl BotBoy {
     fn handle_query_update(&self, i: Update) {
         let query = i.callback_query.unwrap();
         let (text, chat_id) = get_string_from_query(query);
-        self.update_from_string(chat_id, &text);
+        self.update_from_message(chat_id, &ChatterMessage::Message(text));
     }
 
     fn handle_message_update(&self, i: Update) {
         let message = i.message.unwrap();
-        let (text, chat_id) = self.get_string_from_message(message);
-        self.update_from_string(chat_id, &text);
+        let (text, chat_id) = self.get_string_from_message(&message);
+        self.update_from_message(chat_id, &text);
     }
 
-    fn update_from_string(&self, chat_id: i64, message: &String) {
+    fn update_from_message(&self, chat_id: i64, message: &ChatterMessage) {
         let flow_status = accept_incoming_message(&chat_id.to_string(), message);
 
         match flow_status {
@@ -294,10 +326,13 @@ impl BotBoy {
                 message,
                 desired_value: _,
             } => {
-                let _ = self.send_message_to_user(chat_id, &message);
+                _ = self.send_message_to_user(chat_id, &message);
             }
             FlowStatus::Info(message) => {
-                let _ = self.send_message_to_user(chat_id, &message);
+                _ = self.send_message_to_user(chat_id, &message);
+            }
+            FlowStatus::Media(message) => {
+                _ = self.send_media_to_user(chat_id, message);
             }
         }
     }
@@ -353,7 +388,9 @@ impl BotBoy {
     ) -> core::result::Result<Response<Vec<Update>>, ()> {
         match serde_json::from_str::<Response<Vec<Update>>>(&input) {
             Ok(obj) => Ok(obj),
-            Err(_) => Err(()),
+            Err(e) => {
+                panic!("{}", e);
+            }
         }
     }
 
@@ -400,29 +437,107 @@ impl BotBoy {
         }
     }
 
-    fn get_string_from_message(&self, message: Message) -> (String, i64) {
+    pub fn send_photo(
+        &self,
+        chat_id: &String,
+        photo: &String,
+    ) -> ::core::result::Result<(), String> {
+        let url = self.values.get_url_photo(&self.token);
+
+        match self.send_object(
+            &url,
+            SendMedia::Photo {
+                chat_id: chat_id.to_owned(),
+                photo: photo.to_owned(),
+            },
+        ) {
+            Ok(mut response) => {
+                let text = response.text().unwrap();
+
+                println!("{}", text);
+                let parsed =
+                    serde_json::from_str::<BareResponse>(&text).unwrap();
+
+                if parsed.ok {
+                    Ok(())
+                } else {
+                    Err("Bad request".to_owned())
+                }
+            }
+            Err(_) => Err("Request Failed".to_owned()),
+        }
+    }
+
+    fn get_string_from_message(&self, message: &Message) -> (ChatterMessage, i64) {
         if message.entities.is_some() {
-            let entities = message.entities.unwrap();
+            let entities = message.entities.as_ref().unwrap();
             let entity = entities.get(0).unwrap();
             match entity._type.as_str() {
                 "mention" => {
                     let offset = entity.offset;
                     let length = entity.length;
-                    let text = message.text.unwrap();
+                    let text = message.text.as_ref().unwrap();
                     let result = &text[offset as usize..length as usize];
-                    (self.get_chat(&result.to_string()), message.chat.unwrap().id)
+                    (
+                        ChatterMessage::Message(self.get_chat(&result.to_string())),
+                        message.chat.as_ref().unwrap().id,
+                    )
                 }
                 _ => {
                     // same as normal message logic
-                    (message.text.unwrap(), message.chat.unwrap().id)
+                    (
+                        ChatterMessage::Message(message.text.as_ref().unwrap().to_owned()),
+                        message.chat.as_ref().unwrap().id,
+                    )
                 }
             }
         } else if message.text.is_some() {
-            (message.text.unwrap(), message.chat.unwrap().id)
+            (
+                ChatterMessage::Message(message.text.as_ref().unwrap().to_owned()),
+                message.chat.as_ref().unwrap().id,
+            )
         } else if message.video.is_some() {
-            (message.video.unwrap().file_id, message.chat.unwrap().id)
+            (
+                ChatterMessage::Video(
+                    message
+                        .video
+                        .as_ref()
+                        .unwrap()
+                        .get(0)
+                        .unwrap()
+                        .file_id
+                        .to_owned(),
+                ),
+                message.chat.as_ref().unwrap().id,
+            )
         } else if message.document.is_some() {
-            (message.document.unwrap().file_id, message.chat.unwrap().id)
+            (
+                ChatterMessage::Document(
+                    message
+                        .document
+                        .as_ref()
+                        .unwrap()
+                        .get(0)
+                        .unwrap()
+                        .file_id
+                        .to_owned(),
+                ),
+                message.chat.as_ref().unwrap().id,
+            )
+        } else if message.photo.is_some() {
+            (
+                ChatterMessage::Photo(
+                    message
+                        .photo
+                        .as_ref()
+                        .unwrap()
+                        .get(0)
+                        .unwrap()
+                        .file_id
+                        .to_owned(),
+                ),
+                message.chat.as_ref().unwrap().id,
+            )
         } else {
             panic!("Unsupported message type");
         }
