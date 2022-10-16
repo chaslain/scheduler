@@ -182,7 +182,7 @@ impl ConfigInProgress {
                 message: "This is a dummy. Don't send this to people.".to_string(),
             },
             DesiredValue::Message => Coorespondance {
-                message: "Send the message or media you'd like sent.".to_string(),
+                message: "What message or media would you like sent? Send it to me now.".to_string(),
                 option_type: OptionType::Media,
             },
             DesiredValue::Frequency => Coorespondance {
@@ -196,7 +196,7 @@ impl ConfigInProgress {
                 ]]),
             },
             DesiredValue::StartMonth => Coorespondance {
-                message: "Please select your scheduled month.".to_string(),
+                message: "Now I'll need a date, for the first message. All future dates will be based off of this date. \n\nPlease select your scheduled month.".to_string(),
                 option_type: OptionType::Options(get_option_months()),
             },
             DesiredValue::StartDay => Coorespondance {
@@ -211,7 +211,7 @@ impl ConfigInProgress {
             },
             DesiredValue::Chat => Coorespondance {
                 message:
-                    "Please \"mention\" the chat or channel where you would like the data posted."
+                    "Please \"mention\" the chat or channel where you would like the message posted."
                         .to_string(),
                 option_type: OptionType::Media,
             },
