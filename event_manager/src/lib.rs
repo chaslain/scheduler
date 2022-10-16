@@ -114,10 +114,11 @@ fn create_schedule_index(user_id: &String, path_str: &String) -> bool {
     let sym_directory = format!("users/{}", user_id);
     let sym_path_directory = Path::new(&sym_directory);
 
-    let mut i = 0;
+    let mut i = 1;
 
     if sym_path_directory.exists() {
-        for _ in sym_path_directory.read_dir() {
+        for _ in sym_path_directory.read_dir().unwrap() {
+            println!();
             // not concerned with files themselves, just how many there are...
             i += 1;
         }
@@ -143,7 +144,6 @@ fn create_schedule_main(
 
     let file_name = schedule.get_file_location(user_id);
 
-    println!("{}", file_name);
     let path = Path::new(&file_name);
 
     create_dir_all(&path.parent().unwrap()).unwrap();

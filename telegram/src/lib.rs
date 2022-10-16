@@ -163,10 +163,8 @@ impl BotBoy {
             i += 1;
         }
 
-        println!("length of options: {}", options.len());
         for option in options {
             for button in option {
-                print!("{} - ", button);
                 items.get_mut(index).unwrap().push(InlineKeyboardButton {
                     text: button.to_owned(),
                     callback_data: button.to_owned(),
@@ -188,9 +186,7 @@ impl BotBoy {
     }
 
     fn send_object<T: Serialize>(&self, url: &String, object: T) -> Result<reqwest::Response> {
-        println!("{}", url);
         let body = to_string(&object).unwrap();
-        println!("{}", body);
 
         let req = self
             .client
@@ -199,10 +195,6 @@ impl BotBoy {
             .header("Content-Type", "application/json")
             .build()
             .unwrap();
-
-        for i in req.headers().keys() {
-            println!("{}", req.headers().get(i).unwrap().to_str().unwrap());
-        }
 
         self.client.execute(req)
     }
@@ -282,11 +274,14 @@ impl BotBoy {
             } => {
                 let _ = self.send_message_to_user(chat_id, &message);
             }
+            FlowStatus::Info(message) => {
+                let _ = self.send_message_to_user(chat_id, &message);
+            }
         }
     }
 
     fn use_coorespondance(&self, chat_id: i64, coorespondance: Coorespondance) {
-        let response: Option<::core::result::Result<::reqwest::Response, ::reqwest::Error>> =
+        let _response: Option<::core::result::Result<::reqwest::Response, ::reqwest::Error>> =
             match coorespondance.option_type {
                 OptionType::Date => {
                     Some(self.send_message_to_user(chat_id, &coorespondance.message))
@@ -309,8 +304,6 @@ impl BotBoy {
                 }
                 OptionType::None => None,
             };
-
-        println!("{}", response.unwrap().unwrap().text().unwrap());
     }
 
     fn get_updates(&self, input: &String) -> core::result::Result<Vec<Update>, ()> {
@@ -345,7 +338,6 @@ impl BotBoy {
     fn get_updates_manual(&self) -> core::result::Result<String, ()> {
         let url = self.values.get_url_updates(&self.token);
 
-        println!("{}", url);
         match self.client.get(&url).send() {
             Ok(mut response) => {
                 let text = response.text().unwrap();
@@ -359,12 +351,11 @@ impl BotBoy {
     fn get_updates_option(&self, id: i64) {
         let url = self.values.get_url_updates(&self.token);
 
-        let resp = self
+        let _ = self
             .client
             .get(&url)
             .query(&[("offset", &(id + 1).to_string())])
             .send();
-        println!("{}", resp.unwrap().text().unwrap());
     }
 }
 

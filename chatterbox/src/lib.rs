@@ -10,6 +10,7 @@ use event_manager::Config;
 use event_manager::Message;
 use event_manager::Schedule as emSchedule;
 use serde::{Deserialize, Serialize};
+use std::fs::read_link;
 use std::fs::read_to_string;
 use std::fs::remove_file;
 use std::fs::File;
@@ -24,6 +25,7 @@ pub enum FlowStatus {
         desired_value: DesiredValue,
     },
     Cancelled,
+    Info(String),
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -37,6 +39,7 @@ pub enum Schedule {
 
 #[derive(Serialize, Deserialize)]
 pub enum DesiredValue {
+    Start,
     Message,
     Frequency,
     StartMonth,
@@ -89,6 +92,7 @@ struct ConfigInProgress {
 impl ConfigInProgress {
     pub fn move_to_next_step(&mut self) {
         self.desired_value = match self.desired_value {
+            DesiredValue::Start => DesiredValue::Message,
             DesiredValue::Message => DesiredValue::Frequency,
             DesiredValue::Frequency => match self.schedule.as_ref().unwrap() {
                 Schedule::Daily => DesiredValue::StartTime,
@@ -112,6 +116,7 @@ impl ConfigInProgress {
 
     pub fn get_flow_status(&self) -> FlowStatus {
         match self.desired_value {
+            DesiredValue::Start => FlowStatus::Done,
             DesiredValue::Message => FlowStatus::Step(self.get_message()),
             DesiredValue::Frequency => FlowStatus::Step(self.get_message()),
             DesiredValue::StartMonth => FlowStatus::Step(self.get_message()),
@@ -132,6 +137,7 @@ impl ConfigInProgress {
 
     fn get_message(&self) -> Coorespondance {
         match self.desired_value {
+            DesiredValue::Start => Coorespondance { option_type: OptionType::None, message: "This is a dummy. Don't send this to people.".to_string() },
             DesiredValue::Message => Coorespondance {
                 message: "Send the message or media you'd like sent.".to_string(),
                 option_type: OptionType::Media,
@@ -196,15 +202,17 @@ pub struct Coorespondance {
 }
 
 fn load_input(state: &mut ConfigInProgress, message: &String) -> Result<UserInput, String> {
-    if message.to_lowercase() == "/cancel" {
+    if message.to_lowercase().trim() == "/cancel" {
         return Ok(UserInput::Cancel);
     }
 
-    if message.to_lowercase() == "/list" {
+    if message.to_lowercase().trim() == "/list" {
+        println!("user wants a list");
         return Ok(UserInput::List);
     }
 
     match state.desired_value {
+        DesiredValue::Start => Ok(UserInput::Message(message.to_owned())),
         DesiredValue::Message => Ok(UserInput::Message(message.to_owned())),
         DesiredValue::Chat => Ok(UserInput::Message(message.to_owned())),
         DesiredValue::Frequency => {
@@ -279,20 +287,17 @@ pub fn accept_incoming_message(u_id: &String, message: &String) -> FlowStatus {
     // first thing we have to do is stick this into an enum.
     let (mut state, already_exists) = get_state(&u_id);
 
-    if !already_exists {
-        save_state(u_id, &state);
-        state.get_flow_status()
-    } else {
-        let validate = load_input(&mut state, message);
 
-        match validate {
-            Ok(input) => process_incoming_message(u_id, input, &mut state),
-            Err(message) => FlowStatus::Error {
-                message,
-                desired_value: state.desired_value,
-            },
-        }
+    let validate = load_input(&mut state, message);
+
+    match validate {
+        Ok(input) => process_incoming_message(u_id, input, &mut state),
+        Err(message) => FlowStatus::Error {
+            message,
+            desired_value: state.desired_value,
+        },
     }
+    
 }
 
 fn process_incoming_message(
@@ -305,9 +310,10 @@ fn process_incoming_message(
             delete_state(u_id);
             FlowStatus::Cancelled
         }
-        UserInput::List => process_list(u_id),
+        UserInput::List => process_list(&u_id),
         _ => {
             let closed = match state.desired_value {
+                DesiredValue::Start => false,
                 DesiredValue::Message => process_desired_message(state, message),
                 DesiredValue::Frequency => process_frequency(state, message),
                 DesiredValue::StartDay => process_month_day(state, message),
@@ -514,7 +520,7 @@ fn get_state(u_id: &String) -> (ConfigInProgress, bool) {
                 first_execution_day: None,
                 first_execution_month: None,
                 first_execution_time: None,
-                desired_value: DesiredValue::Message,
+                desired_value: DesiredValue::Start,
                 has_token: None,
                 chat_id: None,
                 message: None,
@@ -650,8 +656,78 @@ fn get_month_from_int(item: i32) -> Option<Month> {
     }
 }
 
-fn process_list(_u_id: &String) -> FlowStatus {
-    FlowStatus::Done
+fn process_list(u_id: &String) -> FlowStatus {
+    let mut message = String::from("");
+
+    let user_directory = format!("users/{}", u_id);
+
+    let user_directory_path = Path::new(&user_directory);
+
+    for file in user_directory_path.read_dir().unwrap() {
+        let path = file.unwrap().path();
+        let i = path.file_name().unwrap().to_str().unwrap().to_string();
+
+
+        let real_path = read_link(path).unwrap().to_str().unwrap().to_string();
+        let all_directories = real_path.split("/").collect::<Vec<&str>>();
+        let frequency = all_directories.get(1).unwrap();
+        let info = match *frequency {
+            "daily" => {
+                let time = all_directories.get(2).unwrap();
+                format!("{}: Sent daily at {}\n", i, time)
+            }
+            "weekly" => {
+                let weekday = all_directories.get(2).unwrap();
+                let time = all_directories.get(3).unwrap();
+                format!("{}: Sent weekly on {} at {}\n", i, weekday, time)
+            }
+            "biweekly" => {
+                let weekday = all_directories.get(3).unwrap();
+                let time = all_directories.get(4).unwrap();
+                format!("{}: Sent bi-weekly on {} at {}\n", i, weekday, time)
+            }
+            "monthly" => {
+                let day = all_directories.get(2).unwrap().parse::<i32>().unwrap();
+                let time = all_directories.get(3).unwrap();
+                format!("{}: Sent monthly on day {} at {}\n", i, day, time)
+            }
+            "yearly" => {
+                let day = all_directories.get(3).unwrap().parse::<i32>().unwrap();
+                let time = all_directories.get(4).unwrap();
+                let month = all_directories.get(2).unwrap();
+                let month_name =
+                    string_from_month(get_month_from_int(month.parse::<i32>().unwrap()).unwrap());
+                format!(
+                    "{}: Sent yearly on {} on day {} at {}\n",
+                    i, month_name, day, time
+                )
+            }
+            _ => "".to_owned(),
+        };
+
+        message.push_str(&info);
+    }
+
+    FlowStatus::Info(message)
+}
+
+fn string_from_month(month: Month) -> String {
+    let item = match month {
+        Month::January => "January",
+        Month::February => "February",
+        Month::March => "March",
+        Month::April => "April",
+        Month::May => "May",
+        Month::June => "June",
+        Month::July => "July",
+        Month::August => "August",
+        Month::September => "September",
+        Month::October => "October",
+        Month::November => "November",
+        Month::December => "December",
+    };
+
+    item.to_string()
 }
 
 #[cfg(test)]
