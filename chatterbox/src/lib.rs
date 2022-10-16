@@ -282,6 +282,13 @@ fn load_input(
             },
             None => Err("Hi! To get started, use /start.".to_string()),
         },
+        Message::Voice(id) => match state {
+            Some(state) => match state.desired_value {
+                DesiredValue::Message => Ok(UserInput::Media(Message::Voice(id.to_string()))),
+                _ => get_error(&state.desired_value),
+            },
+            None => Err("Hi! To get started, use /start.".to_string()),
+        },
     }
 }
 
@@ -866,9 +873,6 @@ fn get_error(desired_value: &DesiredValue) -> Result<UserInput, String> {
         }
         DesiredValue::StartTime => {
             Err("Please provide a 24-hour time in the hour:minute format.".to_owned())
-        }
-        DesiredValue::HasToken => {
-            Err("Please use the provided buttons to select Yes/No.".to_owned())
         }
         DesiredValue::Token => Err("Please provide the bot token.".to_owned()),
     }

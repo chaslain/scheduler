@@ -20,6 +20,7 @@ pub enum Message {
     Video(String),
     Audio(String),
     Document(String),
+    Voice(String),
 }
 
 pub enum Schedule {
@@ -117,8 +118,17 @@ fn create_schedule_index(user_id: &String, path_str: &String) -> bool {
     let mut i = 1;
 
     if sym_path_directory.exists() {
-        for _ in sym_path_directory.read_dir().unwrap() {
-            i += 1;
+        let files = sym_path_directory
+            .read_dir()
+            .unwrap()
+            .into_iter()
+            .map(|i| i.unwrap().file_name().to_str().unwrap().to_owned())
+            .collect::<Vec<String>>();
+
+        loop {
+            if files.contains(&i.to_string()) {
+                i += 1;
+            }
         }
     } else {
         _ = create_dir_all(sym_path_directory);

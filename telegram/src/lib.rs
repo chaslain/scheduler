@@ -61,7 +61,9 @@ struct SendMessage {
 enum SendMedia {
     Photo { chat_id: String, photo: String },
     Video { chat_id: String, video: String },
-    Audio { chat_id: String, video: String },
+    Audio { chat_id: String, audio: String },
+    Document { chat_id: String, document: String },
+    Voice { chat_id: String, voice: String },
 }
 #[derive(Serialize, Deserialize)]
 struct Message {
@@ -72,6 +74,7 @@ struct Message {
     document: Option<Vec<File>>,
     photo: Option<Vec<File>>,
     entities: Option<Vec<Entity>>,
+    voice: Option<File>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -129,6 +132,22 @@ impl Values {
     pub fn get_url_photo(&self, token: &String) -> String {
         format!("{}{}/sendPhoto", self.base_url, token)
     }
+
+    pub fn get_url_video(&self, token: &String) -> String {
+        format!("{}{}/sendVideo", self.base_url, token)
+    }
+
+    pub fn get_url_document(&self, token: &String) -> String {
+        format!("{}{}/sendDocument", self.base_url, token)
+    }
+
+    pub fn get_url_audio(&self, token: &String) -> String {
+        format!("{}{}/sendAudio", self.base_url, token)
+    }
+
+    pub fn get_url_voice(&self, token: &String) -> String {
+        format!("{}{}/sendVoice", self.base_url, token)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -157,15 +176,26 @@ impl BotBoy {
             ChatterMessage::Message(text) => {
                 _ = self.send_message_to_user(user_id, &text);
             }
-            ChatterMessage::Photo(id) => {
-                match self.send_photo(&user_id.to_string(), &id) {
-                    Ok(()) => {},
-                    Err(e) => {}
-                }
+            ChatterMessage::Photo(id) => match self.send_photo(&user_id.to_string(), &id) {
+                Ok(()) => {}
+                Err(_e) => {}
             },
-            ChatterMessage::Audio(id) => {}
-            ChatterMessage::Video(id) => {}
-            ChatterMessage::Document(id) => {}
+            ChatterMessage::Audio(id) => match self.send_audio(&user_id.to_string(), &id) {
+                Ok(()) => {}
+                Err(_e) => {}
+            },
+            ChatterMessage::Video(id) => match self.send_video(&user_id.to_string(), &id) {
+                Ok(()) => {}
+                Err(_e) => {}
+            },
+            ChatterMessage::Document(id) => match self.send_document(&user_id.to_string(), &id) {
+                Ok(()) => {}
+                Err(_e) => {}
+            },
+            ChatterMessage::Voice(id) => match self.send_voice(&user_id.to_string(), &id) {
+                Ok(()) => {}
+                Err(_e) => {}
+            },
         }
     }
 
@@ -437,26 +467,13 @@ impl BotBoy {
         }
     }
 
-    pub fn send_photo(
-        &self,
-        chat_id: &String,
-        photo: &String,
-    ) -> ::core::result::Result<(), String> {
-        let url = self.values.get_url_photo(&self.token);
-
-        match self.send_object(
-            &url,
-            SendMedia::Photo {
-                chat_id: chat_id.to_owned(),
-                photo: photo.to_owned(),
-            },
-        ) {
+    fn send_media(&self, media: SendMedia, url: &String) -> ::core::result::Result<(), String> {
+        match self.send_object(&url, media) {
             Ok(mut response) => {
                 let text = response.text().unwrap();
 
                 println!("{}", text);
-                let parsed =
-                    serde_json::from_str::<BareResponse>(&text).unwrap();
+                let parsed = serde_json::from_str::<BareResponse>(&text).unwrap();
 
                 if parsed.ok {
                     Ok(())
@@ -466,6 +483,81 @@ impl BotBoy {
             }
             Err(_) => Err("Request Failed".to_owned()),
         }
+    }
+
+    pub fn send_document(
+        &self,
+        chat_id: &String,
+        document: &String,
+    ) -> ::core::result::Result<(), String> {
+        let url = self.values.get_url_document(&self.token);
+
+        let media = SendMedia::Document {
+            chat_id: chat_id.to_owned(),
+            document: document.to_owned(),
+        };
+
+        self.send_media(media, &url)
+    }
+
+    pub fn send_audio(
+        &self,
+        chat_id: &String,
+        audio: &String,
+    ) -> ::core::result::Result<(), String> {
+        let url = self.values.get_url_audio(&self.token);
+
+        let media = SendMedia::Audio {
+            chat_id: chat_id.to_owned(),
+            audio: audio.to_owned(),
+        };
+
+        self.send_media(media, &url)
+    }
+
+    pub fn send_voice(
+        &self,
+        chat_id: &String,
+        voice: &String,
+    ) -> ::core::result::Result<(), String> {
+        let url = self.values.get_url_voice(&self.token);
+
+        let media = SendMedia::Voice {
+            chat_id: chat_id.to_owned(),
+            voice: voice.to_owned(),
+        };
+
+        self.send_media(media, &url)
+    }
+
+    pub fn send_video(
+        &self,
+        chat_id: &String,
+        video: &String,
+    ) -> ::core::result::Result<(), String> {
+        let url = self.values.get_url_video(&self.token);
+
+        let media = SendMedia::Video {
+            chat_id: chat_id.to_owned(),
+            video: video.to_owned(),
+        };
+
+        self.send_media(media, &url)
+    }
+
+    pub fn send_photo(
+        &self,
+        chat_id: &String,
+        photo: &String,
+    ) -> ::core::result::Result<(), String> {
+        let url = self.values.get_url_photo(&self.token);
+
+        let media = SendMedia::Photo {
+            chat_id: chat_id.to_owned(),
+            photo: photo.to_owned(),
+        };
+
+        self.send_media(media, &url)
     }
 
     fn get_string_from_message(&self, message: &Message) -> (ChatterMessage, i64) {
@@ -536,6 +628,11 @@ impl BotBoy {
                         .file_id
                         .to_owned(),
                 ),
+                message.chat.as_ref().unwrap().id,
+            )
+        } else if message.voice.is_some() {
+            (
+                ChatterMessage::Voice(message.voice.as_ref().unwrap().file_id.to_owned()),
                 message.chat.as_ref().unwrap().id,
             )
         } else {
