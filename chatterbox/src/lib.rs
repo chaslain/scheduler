@@ -59,9 +59,48 @@ pub enum UserInput {
     Date(String),
     Media(String),
     YesNo(bool),
+    Delete(String),
+    Command(Command),
+}
+
+pub enum Command {
+    Start,
+    Cancel,
     List,
     Delete(String),
-    Cancel,
+}
+
+impl Command {
+    pub fn execute(&self, u_id: &String) -> FlowStatus {
+        match self {
+            Command::Cancel => {
+                delete_state(u_id);
+                FlowStatus::Cancelled
+            }
+            Command::List => process_list(u_id),
+            Command::Start => {
+                save_state(
+                    u_id,
+                    &ConfigInProgress {
+                        schedule: None,
+                        desired_value: DesiredValue::Message,
+                        first_execution_month: None,
+                        first_execution_day: None,
+                        first_execution_time: None,
+                        chat_id: None,
+                        message: None,
+                        has_token: None,
+                        token: None,
+                    },
+                );
+                FlowStatus::Step(Coorespondance {
+                    option_type: OptionType::Media,
+                    message: "Please send the message you'd like sent".to_owned(),
+                })
+            }
+            Command::Delete(_to_delete) => FlowStatus::Done,
+        }
+    }
 }
 
 impl UserInput {
@@ -138,7 +177,10 @@ impl ConfigInProgress {
 
     fn get_message(&self) -> Coorespondance {
         match self.desired_value {
-            DesiredValue::Start => Coorespondance { option_type: OptionType::None, message: "This is a dummy. Don't send this to people.".to_string() },
+            DesiredValue::Start => Coorespondance {
+                option_type: OptionType::None,
+                message: "This is a dummy. Don't send this to people.".to_string(),
+            },
             DesiredValue::Message => Coorespondance {
                 message: "Send the message or media you'd like sent.".to_string(),
                 option_type: OptionType::Media,
@@ -168,8 +210,9 @@ impl ConfigInProgress {
                 option_type: OptionType::Time,
             },
             DesiredValue::Chat => Coorespondance {
-                message: "Please \"mention\" the chat or channel where you would like the data posted."
-                    .to_string(),
+                message:
+                    "Please \"mention\" the chat or channel where you would like the data posted."
+                        .to_string(),
                 option_type: OptionType::Media,
             },
             DesiredValue::HasToken => Coorespondance {
@@ -202,100 +245,114 @@ pub struct Coorespondance {
     pub message: String,
 }
 
-fn load_input(state: &mut ConfigInProgress, message: &String) -> Result<UserInput, String> {
-    if message.to_lowercase().trim() == "/cancel" {
-        return Ok(UserInput::Cancel);
+fn load_input(state: &mut Option<ConfigInProgress>, message: &String) -> Result<UserInput, String> {
+    if message.starts_with("/") {
+        return load_command(message);
     }
 
-    if message.to_lowercase().trim() == "/list" {
-        println!("user wants a list");
-        return Ok(UserInput::List);
-    }
-
-    match state.desired_value {
-        DesiredValue::Start => Ok(UserInput::Message(message.to_owned())),
-        DesiredValue::Message => Ok(UserInput::Message(message.to_owned())),
-        DesiredValue::Chat => { 
-            // note - bad links would have since been turned into INVALID - which does not start with an '@' ;)
-            if message.starts_with('@') {
-                Ok(UserInput::Message(message.to_owned()))
-            }
-            else {
-                Err("Please provide a valid chat by \"mentioning\" it.".to_owned())
-            }
-        },
-        DesiredValue::Frequency => {
-            let parse = UserInput::parse_frequency(message);
-            if parse.is_err() {
-                Err("Please select a frequency.".to_owned())
-            } else {
-                Ok(parse.unwrap())
-            }
-        }
-        DesiredValue::StartMonth => {
-            let parse: Result<i32, ()> = match message.to_lowercase().as_str() {
-                "january" => Ok(1),
-                "february" => Ok(2),
-                "march" => Ok(3),
-                "april" => Ok(4),
-                "may" => Ok(5),
-                "june" => Ok(6),
-                "july" => Ok(7),
-                "august" => Ok(8),
-                "september" => Ok(9),
-                "october" => Ok(10),
-                "november" => Ok(11),
-                "december" => Ok(12),
-                _ => Err(()),
-            };
-
-            match parse {
-                Ok(_) => {
-                    state.first_execution_month = Some(message.to_owned());
+    match state {
+        Some(state) => match state.desired_value {
+            DesiredValue::Start => Ok(UserInput::Message(message.to_owned())),
+            DesiredValue::Message => Ok(UserInput::Message(message.to_owned())),
+            DesiredValue::Chat => {
+                // note - bad links would have since been turned into INVALID - which does not start with an '@' ;)
+                if message.starts_with('@') {
                     Ok(UserInput::Message(message.to_owned()))
-                }
-                Err(()) => {
-                    Err("Please use one of the provided buttons to select your month.".to_string())
+                } else {
+                    Err("Please provide a valid chat by \"mentioning\" it.".to_owned())
                 }
             }
-        }
-        DesiredValue::StartDay => {
-            let days = get_days_by_month(&state.first_execution_month.as_ref().unwrap());
+            DesiredValue::Frequency => {
+                let parse = UserInput::parse_frequency(message);
+                if parse.is_err() {
+                    Err("Please select a frequency.".to_owned())
+                } else {
+                    Ok(parse.unwrap())
+                }
+            }
+            DesiredValue::StartMonth => {
+                let parse: Result<i32, ()> = match message.to_lowercase().as_str() {
+                    "january" => Ok(1),
+                    "february" => Ok(2),
+                    "march" => Ok(3),
+                    "april" => Ok(4),
+                    "may" => Ok(5),
+                    "june" => Ok(6),
+                    "july" => Ok(7),
+                    "august" => Ok(8),
+                    "september" => Ok(9),
+                    "october" => Ok(10),
+                    "november" => Ok(11),
+                    "december" => Ok(12),
+                    _ => Err(()),
+                };
 
-            match message.parse::<i32>() {
-                Ok(number) => {
-                    if number < 1 || number > days {
-                        Err("Please use one of the provided buttons to select your day."
-                            .to_string())
-                    } else {
+                match parse {
+                    Ok(_) => {
+                        state.first_execution_month = Some(message.to_owned());
                         Ok(UserInput::Message(message.to_owned()))
                     }
-                }
-                Err(_) => {
-                    Err("Please use one of the provided buttons to select your day.".to_string())
+                    Err(()) => Err(
+                        "Please use one of the provided buttons to select your month.".to_string(),
+                    ),
                 }
             }
-        }
-        DesiredValue::StartTime => {
-            let time = NaiveTime::parse_from_str(message, "%H:%M");
+            DesiredValue::StartDay => {
+                let days = get_days_by_month(&state.first_execution_month.as_ref().unwrap());
 
-            match time {
-                Err(_) => {
-                    Err("Hmm... Sorry, I don't understand that. Can you send it in the 24-hour HH:MM format?".to_owned())
+                match message.parse::<i32>() {
+                    Ok(number) => {
+                        if number < 1 || number > days {
+                            Err("Please use one of the provided buttons to select your day."
+                                .to_string())
+                        } else {
+                            Ok(UserInput::Message(message.to_owned()))
+                        }
+                    }
+                    Err(_) => {
+                        Err("Please use one of the provided buttons to select your day."
+                            .to_string())
+                    }
                 }
-                Ok(_) => Ok(UserInput::Time(message.to_owned())),
             }
-        }
-        DesiredValue::HasToken => Ok(UserInput::YesNo(message.to_lowercase() == "yes")),
-        DesiredValue::Token => Ok(UserInput::Message(message.to_owned())),
-        DesiredValue::None => Ok(UserInput::Message(message.to_owned())),
+            DesiredValue::StartTime => {
+                let time = NaiveTime::parse_from_str(message, "%H:%M");
+
+                match time {
+                    Err(_) => {
+                        Err("Hmm... Sorry, I don't understand that. Can you send it in the 24-hour HH:MM format?".to_owned())
+                    }
+                    Ok(_) => Ok(UserInput::Time(message.to_owned())),
+                }
+            }
+            DesiredValue::HasToken => Ok(UserInput::YesNo(message.to_lowercase() == "yes")),
+            DesiredValue::Token => Ok(UserInput::Message(message.to_owned())),
+            DesiredValue::None => Ok(UserInput::Message(message.to_owned())),
+        },
+        None => Err("Hi! to get started, use /start.".to_string()),
     }
 }
 
+fn load_command(message: &String) -> Result<UserInput, String> {
+    let words = message.split(" ").collect::<Vec<&str>>();
+    let command = words.get(0).unwrap();
+
+    match command.to_lowercase().as_str() {
+        "/start" => Ok(UserInput::Command(Command::Start)),
+        "/cancel" => Ok(UserInput::Command(Command::Cancel)),
+        "/list" => Ok(UserInput::Command(Command::List)),
+        "/delete" => match words.get(1) {
+            Some(val) => Ok(UserInput::Command(Command::Delete(
+                val.to_owned().to_owned(),
+            ))),
+            None => Err("Delete requires exactly one argument".to_owned()),
+        },
+        _ => Err("Invalid command.".to_owned()),
+    }
+}
 pub fn accept_incoming_message(u_id: &String, message: &String) -> FlowStatus {
     // first thing we have to do is stick this into an enum.
     let mut state = get_state(&u_id);
-
 
     let validate = load_input(&mut state, message);
 
@@ -303,45 +360,49 @@ pub fn accept_incoming_message(u_id: &String, message: &String) -> FlowStatus {
         Ok(input) => process_incoming_message(u_id, input, &mut state),
         Err(message) => FlowStatus::Error {
             message,
-            desired_value: state.desired_value,
+            desired_value: match state {
+                Some(state) => state.desired_value,
+                None => DesiredValue::Start,
+            },
         },
     }
-    
 }
 
 fn process_incoming_message(
     u_id: &String,
     message: UserInput,
-    state: &mut ConfigInProgress,
+    state: &mut Option<ConfigInProgress>,
 ) -> FlowStatus {
     match message {
-        UserInput::Cancel => {
-            delete_state(u_id);
-            FlowStatus::Cancelled
-        }
-        UserInput::List => process_list(&u_id),
-        _ => {
-            let closed = match state.desired_value {
-                DesiredValue::Start => false,
-                DesiredValue::Message => process_desired_message(state, message),
-                DesiredValue::Frequency => process_frequency(state, message),
-                DesiredValue::StartDay => process_month_day(state, message),
-                DesiredValue::StartMonth => process_month(state, message),
-                DesiredValue::StartTime => process_time(state, message),
-                DesiredValue::Chat => process_chat(state, message),
-                DesiredValue::HasToken => process_has_token(state, message, u_id),
-                DesiredValue::Token => process_token(state, message, u_id),
-                DesiredValue::None => true,
-            };
+        UserInput::Command(com) => com.execute(u_id),
+        _ => match state {
+            Some(state) => {
+                let closed = match state.desired_value {
+                    DesiredValue::Start => false,
+                    DesiredValue::Message => process_desired_message(state, message),
+                    DesiredValue::Frequency => process_frequency(state, message),
+                    DesiredValue::StartDay => process_month_day(state, message),
+                    DesiredValue::StartMonth => process_month(state, message),
+                    DesiredValue::StartTime => process_time(state, message),
+                    DesiredValue::Chat => process_chat(state, message),
+                    DesiredValue::HasToken => process_has_token(state, message, u_id),
+                    DesiredValue::Token => process_token(state, message, u_id),
+                    DesiredValue::None => true,
+                };
 
-            if !closed {
-                state.move_to_next_step();
-                save_state(u_id, state);
-                state.get_flow_status()
-            } else {
-                FlowStatus::Done
+                if !closed {
+                    state.move_to_next_step();
+                    save_state(u_id, state);
+                    state.get_flow_status()
+                } else {
+                    FlowStatus::Done
+                }
             }
-        }
+            None => FlowStatus::Error {
+                message: "I'm confused... let's just start over".to_owned(),
+                desired_value: DesiredValue::Start,
+            },
+        },
     }
 }
 
@@ -513,7 +574,7 @@ fn close(u_id: &String, config_in_progress: &mut ConfigInProgress) {
     }
 }
 
-fn get_state(u_id: &String) -> ConfigInProgress {
+fn get_state(u_id: &String) -> Option<ConfigInProgress> {
     let file_name: String = format!("in_progress/{}", u_id);
 
     let path = Path::new(&file_name);
@@ -521,20 +582,9 @@ fn get_state(u_id: &String) -> ConfigInProgress {
     if Path::exists(path) {
         let contents = read_to_string(path).unwrap();
 
-        serde_yaml::from_str(&contents).unwrap()
+        Some(serde_yaml::from_str(&contents).unwrap())
     } else {
-        
-        ConfigInProgress {
-            schedule: None,
-            first_execution_day: None,
-            first_execution_month: None,
-            first_execution_time: None,
-            desired_value: DesiredValue::Start,
-            has_token: None,
-            chat_id: None,
-            message: None,
-            token: None,
-        }
+        None
     }
 }
 
@@ -673,7 +723,6 @@ fn process_list(u_id: &String) -> FlowStatus {
     for file in user_directory_path.read_dir().unwrap() {
         let path = file.unwrap().path();
         let i = path.file_name().unwrap().to_str().unwrap().to_string();
-
 
         let real_path = read_link(path).unwrap().to_str().unwrap().to_string();
         let all_directories = real_path.split("/").collect::<Vec<&str>>();
