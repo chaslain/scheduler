@@ -4,7 +4,7 @@ extern crate yaml_rust;
 use chrono::{Month, Weekday};
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::{create_dir_all, File},
+    fs::{create_dir_all, read_link, remove_file, File},
     io::Write,
     os::unix::fs::symlink,
     path::Path,
@@ -153,6 +153,23 @@ fn create_schedule_main(
     match file.write_all(file_content.as_bytes()) {
         Ok(_) => Ok(file_name),
         Err(_) => Err(()),
+    }
+}
+
+pub fn delete_scheduled(user_id: &String, number: i32) {
+    let sym_file_path = format!("users/{}/{}", user_id, number);
+
+    let sym_path = Path::new(&sym_file_path);
+
+    if sym_path.exists() {
+        match read_link(sym_path) {
+            Ok(path) => {
+                _ = remove_file(path);
+            }
+            Err(_) => {}
+        }
+
+        _ = remove_file(sym_path);
     }
 }
 

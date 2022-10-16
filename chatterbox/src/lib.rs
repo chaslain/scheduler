@@ -19,6 +19,7 @@ use std::path::Path;
 
 pub enum FlowStatus {
     Done,
+    DoneWithMessage(String),
     Step(Coorespondance),
     Error {
         message: String,
@@ -39,7 +40,6 @@ pub enum Schedule {
 
 #[derive(Serialize, Deserialize)]
 pub enum DesiredValue {
-    Start,
     Message,
     Frequency,
     StartMonth,
@@ -98,7 +98,10 @@ impl Command {
                     message: "Please send the message you'd like sent".to_owned(),
                 })
             }
-            Command::Delete(_to_delete) => FlowStatus::Done,
+            Command::Delete(to_delete) => {
+                event_manager::delete_scheduled(u_id, to_delete.parse::<i32>().unwrap());
+                FlowStatus::DoneWithMessage(format!("Successfully deleted message #{}", to_delete))
+            }
         }
     }
 }
@@ -132,7 +135,6 @@ struct ConfigInProgress {
 impl ConfigInProgress {
     pub fn move_to_next_step(&mut self) {
         self.desired_value = match self.desired_value {
-            DesiredValue::Start => DesiredValue::Message,
             DesiredValue::Message => DesiredValue::Frequency,
             DesiredValue::Frequency => match self.schedule.as_ref().unwrap() {
                 Schedule::Daily => DesiredValue::StartTime,
@@ -156,7 +158,6 @@ impl ConfigInProgress {
 
     pub fn get_flow_status(&self) -> FlowStatus {
         match self.desired_value {
-            DesiredValue::Start => FlowStatus::Done,
             DesiredValue::Message => FlowStatus::Step(self.get_message()),
             DesiredValue::Frequency => FlowStatus::Step(self.get_message()),
             DesiredValue::StartMonth => FlowStatus::Step(self.get_message()),
@@ -177,10 +178,6 @@ impl ConfigInProgress {
 
     fn get_message(&self) -> Coorespondance {
         match self.desired_value {
-            DesiredValue::Start => Coorespondance {
-                option_type: OptionType::None,
-                message: "This is a dummy. Don't send this to people.".to_string(),
-            },
             DesiredValue::Message => Coorespondance {
                 message: "What message or media would you like sent? Send it to me now.".to_string(),
                 option_type: OptionType::Media,
@@ -252,7 +249,6 @@ fn load_input(state: &mut Option<ConfigInProgress>, message: &String) -> Result<
 
     match state {
         Some(state) => match state.desired_value {
-            DesiredValue::Start => Ok(UserInput::Message(message.to_owned())),
             DesiredValue::Message => Ok(UserInput::Message(message.to_owned())),
             DesiredValue::Chat => {
                 // note - bad links would have since been turned into INVALID - which does not start with an '@' ;)
@@ -342,9 +338,13 @@ fn load_command(message: &String) -> Result<UserInput, String> {
         "/cancel" => Ok(UserInput::Command(Command::Cancel)),
         "/list" => Ok(UserInput::Command(Command::List)),
         "/delete" => match words.get(1) {
-            Some(val) => Ok(UserInput::Command(Command::Delete(
-                val.to_owned().to_owned(),
-            ))),
+            Some(val) => match val.parse::<i32>() {
+                Ok(_) => Ok(UserInput::Command(Command::Delete(val.to_string()))),
+                Err(_) => Err(
+                    "Please provide a valid number cooresponding to the job you'd like to delete."
+                        .to_owned(),
+                ),
+            },
             None => Err("Delete requires exactly one argument".to_owned()),
         },
         _ => Err("Invalid command.".to_owned()),
@@ -362,7 +362,7 @@ pub fn accept_incoming_message(u_id: &String, message: &String) -> FlowStatus {
             message,
             desired_value: match state {
                 Some(state) => state.desired_value,
-                None => DesiredValue::Start,
+                None => DesiredValue::None,
             },
         },
     }
@@ -378,7 +378,6 @@ fn process_incoming_message(
         _ => match state {
             Some(state) => {
                 let closed = match state.desired_value {
-                    DesiredValue::Start => false,
                     DesiredValue::Message => process_desired_message(state, message),
                     DesiredValue::Frequency => process_frequency(state, message),
                     DesiredValue::StartDay => process_month_day(state, message),
@@ -400,7 +399,7 @@ fn process_incoming_message(
             }
             None => FlowStatus::Error {
                 message: "I'm confused... let's just start over".to_owned(),
-                desired_value: DesiredValue::Start,
+                desired_value: DesiredValue::Message,
             },
         },
     }
