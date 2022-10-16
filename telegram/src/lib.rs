@@ -264,8 +264,6 @@ impl BotBoy {
     fn send_object<T: Serialize>(&self, url: &String, object: T) -> Result<reqwest::Response> {
         let body = to_string(&object).unwrap();
 
-        println!("{}", body);
-
         let req = self
             .client
             .post(url.as_str())
@@ -430,7 +428,6 @@ impl BotBoy {
         match self.client.get(&url).send() {
             Ok(mut response) => {
                 let text = response.text().unwrap();
-                println!("{}", text);
                 Ok(text)
             }
             Err(_) => Err(()),
@@ -472,7 +469,6 @@ impl BotBoy {
             Ok(mut response) => {
                 let text = response.text().unwrap();
 
-                println!("{}", text);
                 let parsed = serde_json::from_str::<BareResponse>(&text).unwrap();
 
                 if parsed.ok {

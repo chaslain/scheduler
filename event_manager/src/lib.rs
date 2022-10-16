@@ -1,7 +1,7 @@
 use chrono::{Month, Weekday};
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::{create_dir_all, read_link, read_to_string, remove_file, File},
+    fs::{canonicalize, create_dir_all, read_link, read_to_string, remove_file, File},
     io::Write,
     os::unix::fs::symlink,
     path::Path,
@@ -63,12 +63,12 @@ impl Schedule {
     pub fn get_file_location(self, u_id: &String) -> String {
         match self {
             Schedule::Daily { time } => {
-                format!("recurring/daily/{}/{}", &time, &u_id)
+                format!("./recurring/daily/{}/{}", &time, &u_id)
             }
 
             Schedule::Weekly { weekday, time } => {
                 format!(
-                    "recurring/weekly/{}/{}/{}",
+                    "./recurring/weekly/{}/{}/{}",
                     &get_weekday_display(weekday),
                     &time,
                     &u_id
@@ -78,7 +78,7 @@ impl Schedule {
             Schedule::BiWeekly { weekday, time, odd } => {
                 let odd_string = if odd { "1" } else { "0" };
                 format!(
-                    "recurring/biweekly/{}/{}/{}/{}",
+                    "./recurring/biweekly/{}/{}/{}/{}",
                     &odd_string,
                     &get_weekday_display(weekday),
                     &time,
@@ -87,12 +87,12 @@ impl Schedule {
             }
 
             Schedule::Monthly { day, time } => {
-                format!("recurring/monthly/{}/{}/{}", &day, &time, &u_id)
+                format!("./recurring/monthly/{}/{}/{}", &day, &time, &u_id)
             }
 
             Schedule::Yearly { day, time, month } => {
                 format!(
-                    "recurring/yearly/{}/{}/{}/{}",
+                    "./recurring/yearly/{}/{}/{}/{}",
                     &month.number_from_month(),
                     &day,
                     &time,
@@ -111,7 +111,7 @@ pub fn create_schedule(user_id: &String, configuration: Config, schedule: Schedu
 }
 
 fn create_schedule_index(user_id: &String, path_str: &String) -> bool {
-    let path = Path::new(path_str);
+    let path = canonicalize(Path::new(path_str)).unwrap();
     let sym_directory = format!("users/{}", user_id);
     let sym_path_directory = Path::new(&sym_directory);
 
@@ -128,6 +128,8 @@ fn create_schedule_index(user_id: &String, path_str: &String) -> bool {
         loop {
             if files.contains(&i.to_string()) {
                 i += 1;
+            } else {
+                break;
             }
         }
     } else {
@@ -169,16 +171,16 @@ pub fn delete_scheduled(user_id: &String, number: i32) {
 
     let sym_path = Path::new(&sym_file_path);
 
-    if sym_path.exists() {
-        match read_link(sym_path) {
-            Ok(path) => {
-                _ = remove_file(path);
-            }
-            Err(_) => {}
-        }
+    println!("{}", sym_file_path);
 
-        _ = remove_file(sym_path);
-    }
+    match read_link(sym_path) {
+        Ok(path) => {
+            _ = remove_file(path);
+        }
+        Err(_) => {}
+    };
+
+    _ = remove_file(sym_path);
 }
 
 pub fn get_config(user_id: &String, number: i32) -> Result<Config, ()> {
@@ -210,7 +212,7 @@ pub mod tests {
         };
         let res = schedule.get_file_location("test".as_ref());
 
-        assert_eq!(res, "recurring/daily/12:02/test")
+        assert_eq!(res, "./recurring/daily/12:02/test")
     }
 
     #[test]
@@ -221,7 +223,7 @@ pub mod tests {
         };
         let res = schedule.get_file_location("test2".as_ref());
 
-        assert_eq!(res, "recurring/weekly/monday/3:02/test2")
+        assert_eq!(res, "./recurring/weekly/monday/3:02/test2")
     }
 
     #[test]
@@ -232,7 +234,7 @@ pub mod tests {
         };
         let res = schedule.get_file_location("alan".as_ref());
 
-        assert_eq!(res, "recurring/monthly/3/10:56/alan")
+        assert_eq!(res, "./recurring/monthly/3/10:56/alan")
     }
 
     #[test]
@@ -244,7 +246,7 @@ pub mod tests {
         };
         let res = schedule.get_file_location("bob".as_ref());
 
-        assert_eq!("recurring/biweekly/1/tuesday/00:00/bob", res)
+        assert_eq!("./recurring/biweekly/1/tuesday/00:00/bob", res)
     }
 
     #[test]
@@ -256,6 +258,6 @@ pub mod tests {
         };
         let res: String = schedule.get_file_location("santa".as_ref());
 
-        assert_eq!("recurring/yearly/12/25/10:00/santa", res)
+        assert_eq!("./recurring/yearly/12/25/10:00/santa", res)
     }
 }
