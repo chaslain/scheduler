@@ -12,7 +12,7 @@ fn main() {
     let url = format!("https://api.telegram.org/bot{}/setWebhook", bot.get_token());
 
     let object = SetWebHook {
-        url: "https://3cddtsqpk8.execute-api.us-east-2.amazonaws.com/default/recurring-message-scheduler".to_owned()
+        url: "https://3.138.60.119:80".to_owned()
     };
     
     match bot.send_object(&url, object) {
