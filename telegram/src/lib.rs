@@ -41,7 +41,7 @@ struct CallbackQuery {
 }
 
 #[derive(Serialize, Deserialize)]
-struct Update {
+pub struct Update {
     update_id: i64,
     message: Option<Message>,
     callback_query: Option<CallbackQuery>,
@@ -261,7 +261,7 @@ impl BotBoy {
         self.send_object(&&self.values.get_url_send(&self.token), message)
     }
 
-    fn send_object<T: Serialize>(&self, url: &String, object: T) -> Result<reqwest::Response> {
+    pub fn send_object<T: Serialize>(&self, url: &String, object: T) -> Result<reqwest::Response> {
         let body = to_string(&object).unwrap();
 
         let req = self
@@ -271,8 +271,12 @@ impl BotBoy {
             .header("Content-Type", "application/json")
             .build()
             .unwrap();
+        
+        println!("sending request...");
 
-        self.client.execute(req)
+        let res = self.client.execute(req);
+        println!("done");
+        return res;
     }
 
     pub fn process_updates(&self) {
@@ -292,6 +296,20 @@ impl BotBoy {
             }
         }
     }
+    pub fn process_single_update_from_string(&self, update_string: &String) {
+        match serde_json::from_str(&update_string) {
+            Ok(up) => {
+                let mut wrapper: Vec<Update> = Vec::new();
+                wrapper.push(up);
+
+                self.process_updates_vec(wrapper);
+            },
+
+            Err(e) => {
+                println!("{}", e);
+            }
+        }
+    }
 
     pub fn process_update_from_string(&self, update_string: &String) -> Option<i64> {
         let updates = match self.get_updates(update_string) {
@@ -299,6 +317,12 @@ impl BotBoy {
             Err(_) => panic!("problem!!"),
         };
 
+        self.process_updates_vec(updates)
+    }
+
+    pub fn process_updates_vec(&self, updates: Vec<Update>) -> Option<i64>
+    {
+        println!("inside process updates vec");
         if updates.last().is_some() {
             let result = Some(updates.last().unwrap().update_id);
 
@@ -316,6 +340,10 @@ impl BotBoy {
         } else {
             return None;
         }
+    }
+
+    pub fn get_token(&self) -> String {
+        self.token.to_owned()
     }
 
     fn handle_query_update(&self, i: Update) {
@@ -337,7 +365,7 @@ impl BotBoy {
             FlowStatus::Cancelled => {
                 let _ = self.send_message_to_user(
                     chat_id,
-                    &"Cancelled. Send another message to start again.".to_owned(),
+                    &"Cancelled.".to_owned(),
                 );
             }
             FlowStatus::Done => {

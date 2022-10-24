@@ -63,12 +63,12 @@ impl Schedule {
     pub fn get_file_location(self, u_id: &String) -> String {
         match self {
             Schedule::Daily { time } => {
-                format!("./recurring/daily/{}/{}", &time, &u_id)
+                format!("/mnt/data/recurring/daily/{}/{}", &time, &u_id)
             }
 
             Schedule::Weekly { weekday, time } => {
                 format!(
-                    "./recurring/weekly/{}/{}/{}",
+                    "/mnt/data/recurring/weekly/{}/{}/{}",
                     &get_weekday_display(weekday),
                     &time,
                     &u_id
@@ -78,7 +78,7 @@ impl Schedule {
             Schedule::BiWeekly { weekday, time, odd } => {
                 let odd_string = if odd { "1" } else { "0" };
                 format!(
-                    "./recurring/biweekly/{}/{}/{}/{}",
+                    "/mnt/data/recurring/biweekly/{}/{}/{}/{}",
                     &odd_string,
                     &get_weekday_display(weekday),
                     &time,
@@ -87,12 +87,12 @@ impl Schedule {
             }
 
             Schedule::Monthly { day, time } => {
-                format!("./recurring/monthly/{}/{}/{}", &day, &time, &u_id)
+                format!("/mnt/data/recurring/monthly/{}/{}/{}", &day, &time, &u_id)
             }
 
             Schedule::Yearly { day, time, month } => {
                 format!(
-                    "./recurring/yearly/{}/{}/{}/{}",
+                    "/mnt/data/recurring/yearly/{}/{}/{}/{}",
                     &month.number_from_month(),
                     &day,
                     &time,
@@ -167,7 +167,7 @@ fn create_schedule_main(
 }
 
 pub fn delete_scheduled(user_id: &String, number: i32) {
-    let sym_file_path = format!("users/{}/{}", user_id, number);
+    let sym_file_path = format!("/mnt/data/users/{}/{}", user_id, number);
 
     let sym_path = Path::new(&sym_file_path);
 
@@ -184,7 +184,7 @@ pub fn delete_scheduled(user_id: &String, number: i32) {
 }
 
 pub fn get_config(user_id: &String, number: i32) -> Result<Config, ()> {
-    let sym_file_path = format!("users/{}/{}", user_id, number);
+    let sym_file_path = format!("/mnt/data/users/{}/{}", user_id, number);
 
     let sym_path = Path::new(&sym_file_path);
 
@@ -212,7 +212,7 @@ pub mod tests {
         };
         let res = schedule.get_file_location("test".as_ref());
 
-        assert_eq!(res, "./recurring/daily/12:02/test")
+        assert_eq!(res, "/mnt/data/recurring/daily/12:02/test")
     }
 
     #[test]
@@ -223,7 +223,7 @@ pub mod tests {
         };
         let res = schedule.get_file_location("test2".as_ref());
 
-        assert_eq!(res, "./recurring/weekly/monday/3:02/test2")
+        assert_eq!(res, "/mnt/data/recurring/weekly/monday/3:02/test2")
     }
 
     #[test]
@@ -234,7 +234,7 @@ pub mod tests {
         };
         let res = schedule.get_file_location("alan".as_ref());
 
-        assert_eq!(res, "./recurring/monthly/3/10:56/alan")
+        assert_eq!(res, "/mnt/data/recurring/monthly/3/10:56/alan")
     }
 
     #[test]
@@ -246,7 +246,7 @@ pub mod tests {
         };
         let res = schedule.get_file_location("bob".as_ref());
 
-        assert_eq!("./recurring/biweekly/1/tuesday/00:00/bob", res)
+        assert_eq!("/mnt/data/recurring/biweekly/1/tuesday/00:00/bob", res)
     }
 
     #[test]
@@ -258,6 +258,6 @@ pub mod tests {
         };
         let res: String = schedule.get_file_location("santa".as_ref());
 
-        assert_eq!("./recurring/yearly/12/25/10:00/santa", res)
+        assert_eq!("/mnt/data/recurring/yearly/12/25/10:00/santa", res)
     }
 }

@@ -9,6 +9,7 @@ use event_manager::Config;
 pub use event_manager::Message;
 use event_manager::Schedule as emSchedule;
 use serde::{Deserialize, Serialize};
+use std::fs::create_dir_all;
 use std::fs::read_link;
 use std::fs::read_to_string;
 use std::fs::remove_file;
@@ -94,6 +95,8 @@ impl Command {
                         token: None,
                     },
                 );
+
+                println!("returning send message request");
                 FlowStatus::Step(Coorespondance {
                     option_type: OptionType::Media,
                     message: "Please send the message you'd like sent.".to_owned(),
@@ -646,8 +649,9 @@ fn get_state(u_id: &String) -> Option<ConfigInProgress> {
 }
 
 fn save_state(u_id: &String, config_in_progress: &ConfigInProgress) {
-    let file_path = format!("./in_progress/{}", &u_id);
+    let file_path = format!("/mnt/data/in_progress/{}", &u_id);
 
+    _ = create_dir_all("/mnt/data/in_progress");
     let path = Path::new(&file_path);
     let contents = serde_yaml::to_string(config_in_progress).unwrap();
     let file = File::create(path);
@@ -784,40 +788,40 @@ fn process_list(u_id: &String) -> FlowStatus {
         let real_path = read_link(path).unwrap().to_str().unwrap().to_string();
         let all_directories = real_path.split("/").collect::<Vec<&str>>();
         let data = serde_yaml::from_str::<Config>(&read_to_string(&real_path).unwrap()).unwrap();
-        let frequency = all_directories.get(1).unwrap();
+        let frequency = all_directories.get(5).unwrap();
         let info = match *frequency {
             "daily" => {
-                let time = all_directories.get(2).unwrap();
+                let time = all_directories.get(5).unwrap();
                 format!("{}: Sent daily at {} to {} \n", i, time, data.chat_id)
             }
             "weekly" => {
-                let weekday = all_directories.get(2).unwrap();
-                let time = all_directories.get(3).unwrap();
+                let weekday = all_directories.get(4).unwrap();
+                let time = all_directories.get(5).unwrap();
                 format!(
                     "{}: Sent weekly on {} at {} to {}\n",
                     i, weekday, time, data.chat_id
                 )
             }
             "biweekly" => {
-                let weekday = all_directories.get(3).unwrap();
-                let time = all_directories.get(4).unwrap();
+                let weekday = all_directories.get(5).unwrap();
+                let time = all_directories.get(6).unwrap();
                 format!(
                     "{}: Sent bi-weekly on {} at {} to {}\n",
                     i, weekday, time, data.chat_id
                 )
             }
             "monthly" => {
-                let day = all_directories.get(2).unwrap().parse::<i32>().unwrap();
-                let time = all_directories.get(3).unwrap();
+                let day = all_directories.get(4).unwrap().parse::<i32>().unwrap();
+                let time = all_directories.get(5).unwrap();
                 format!(
                     "{}: Sent monthly on day {} at {} to {}\n",
                     i, day, time, data.chat_id
                 )
             }
             "yearly" => {
-                let day = all_directories.get(3).unwrap().parse::<i32>().unwrap();
-                let time = all_directories.get(4).unwrap();
-                let month = all_directories.get(2).unwrap();
+                let day = all_directories.get(5).unwrap().parse::<i32>().unwrap();
+                let time = all_directories.get(6).unwrap();
+                let month = all_directories.get(4).unwrap();
                 let month_name =
                     string_from_month(get_month_from_int(month.parse::<i32>().unwrap()).unwrap());
                 format!(
